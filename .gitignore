@@ -1,0 +1,20 @@
+node_modules
+.next/*
+# frontend next 관련 gitignore 
+# production build 결과물은 git에 올리지 않음
+.next/**
+.next
+# .env 파일은 민감한 정보를 포함할 수 있으므로 git에 올리지 않음
+.env
+# 로그 파일은 git에 올리지 않음
+logs
+*.log
+# npm 패키지 매니저의 lock 파일은 git에 올리지 않음
+package-lock.json
+# yarn 패키지 매니저의 lock 파일은 git에 올리지 않음
+yarn.lock
+# 기타 빌드 결과물이나 캐시 파일은 git에 올리지 않음
+dist
+build
+.cache
+
