@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Copy, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
@@ -46,21 +47,45 @@ export default function ApiKeysPage() {
       cacheKey(key);
       setNewKeyName("");
       await reload();
+      toast.success("새 API 키가 발급되었습니다", {
+        description: "키 값은 한 번만 보이니 안전한 곳에 저장하세요.",
+      });
+    } catch (err) {
+      toast.error("키 발급에 실패했습니다", {
+        description: err instanceof Error ? err.message : "다시 시도해 주세요.",
+      });
     } finally {
       setCreating(false);
     }
   }
 
-  async function handleRevoke(id: string) {
+  async function handleRevoke(id: string, name: string) {
     if (!confirm("정말 이 키를 취소하시겠습니까? 되돌릴 수 없습니다.")) return;
-    await revokeApiKey(id);
-    await reload();
+    try {
+      await revokeApiKey(id);
+      await reload();
+      toast.success(`"${name}" 키가 취소되었습니다`);
+    } catch (err) {
+      toast.error("키 취소에 실패했습니다", {
+        description: err instanceof Error ? err.message : "다시 시도해 주세요.",
+      });
+    }
+  }
+
+  function handleCopyKey(value: string) {
+    navigator.clipboard.writeText(value);
+    toast.success("API 키가 클립보드에 복사되었습니다");
   }
 
   return (
     <AppShell>
-      <div className="container max-w-4xl py-8 space-y-6">
-        <h1 className="text-2xl font-semibold">API 키</h1>
+      <div className="container max-w-4xl py-10 space-y-8">
+        <div className="space-y-1">
+          <h1 className="text-[28px] font-bold tracking-tight">API 키</h1>
+          <p className="text-sm text-muted-foreground">
+            발급한 키로 외부 SDK / 서버에서 검증 API를 호출할 수 있습니다.
+          </p>
+        </div>
 
         {/* 새로 생성된 키 — 한 번만 표시 */}
         {newRawKey && (
@@ -80,7 +105,8 @@ export default function ApiKeysPage() {
                 <Button
                   variant="outline"
                   size="icon"
-                  onClick={() => navigator.clipboard.writeText(newRawKey)}
+                  onClick={() => handleCopyKey(newRawKey)}
+                  title="클립보드에 복사"
                 >
                   <Copy className="h-4 w-4" />
                 </Button>
@@ -153,7 +179,7 @@ export default function ApiKeysPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => handleRevoke(k.id)}
+                        onClick={() => handleRevoke(k.id, k.name)}
                         title="키 취소"
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />

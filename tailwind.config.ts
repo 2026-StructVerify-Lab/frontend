@@ -44,12 +44,12 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        // verdict 전용 의미 색 — 결과 카드에서 사용
+        // verdict 전용 의미 색 — 노션 팔레트 톤으로 채도 ↓
         verdict: {
-          match: "hsl(142 71% 45%)",
-          mismatch: "hsl(0 84% 60%)",
-          partial: "hsl(43 96% 56%)",
-          unverifiable: "hsl(220 9% 60%)",
+          match: "hsl(168 78% 30%)",      // 노션 그린 #0F7B6C 계열
+          mismatch: "hsl(0 72% 50%)",     // 노션 레드 #E03E3E 계열
+          partial: "hsl(40 75% 42%)",     // 노션 옐로우 #DFAB01 계열
+          unverifiable: "hsl(40 4% 46%)", // 노션 그레이 #787774
         },
       },
       borderRadius: {

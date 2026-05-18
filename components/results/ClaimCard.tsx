@@ -18,7 +18,6 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import type { ClaimResult, Verdict } from "@/lib/types";
 
@@ -90,56 +89,23 @@ export function ClaimCard({ claim, focused, onHover, onClick }: ClaimCardProps) 
       onClick={() => onClick?.(claim.sent_id)}
     >
       <CardContent className="p-4 space-y-3">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-2 flex-1 min-w-0">
-            <Icon className="h-5 w-5 shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <Badge variant={meta.badgeVariant}>{meta.label}</Badge>
-                {typeof claim.confidence === "number" && (
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    conf {claim.confidence.toFixed(2)}
-                  </span>
-                )}
-              </div>
-              <p className="text-sm leading-relaxed">
-                {(claim.claim_text ?? "").length > 200
-                  ? (claim.claim_text ?? "").slice(0, 200) + "…"
-                  : claim.claim_text ?? "(원문 없음)"}
-              </p>
-            </div>
-          </div>
+        {/* Header — claim_text는 그룹 헤더에 이미 있으니 verdict 라벨만 */}
+        <div className="flex items-center gap-2">
+          <Icon className="h-[18px] w-[18px] shrink-0" />
+          <Badge variant={meta.badgeVariant}>{meta.label}</Badge>
+          {typeof claim.confidence === "number" && (
+            <span className="text-xs text-muted-foreground tabular-nums">
+              conf {claim.confidence.toFixed(2)}
+            </span>
+          )}
         </div>
 
-        {/* 검증 결과 핵심 (mismatch/match에서만) */}
-        {(claim.verdict === "mismatch" || claim.verdict === "match") &&
-          claim.evidence && (
-            <div className="bg-muted/40 rounded-md p-3 text-sm space-y-1">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">기사 주장</span>
-                <span className="font-medium tabular-nums">
-                  {claim.schema?.value}
-                  {claim.schema?.unit ?? ""}
-                </span>
-              </div>
-              {claim.computed_value !== null &&
-                claim.computed_value !== undefined && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">공식 통계</span>
-                    <span className="font-medium tabular-nums">
-                      {claim.computed_value.toFixed(3)}
-                      {claim.schema?.unit ?? ""}
-                    </span>
-                  </div>
-                )}
-              {claim.formula && (
-                <div className="text-xs text-muted-foreground pt-1 border-t">
-                  {claim.formula}
-                </div>
-              )}
-            </div>
-          )}
+        {/* 검증 결과 — verdict별 분기 */}
+        {hasComparison(claim) ? (
+          <ComparisonBox claim={claim} />
+        ) : (
+          <AttemptBox claim={claim} />
+        )}
 
         {/* 펼치기 토글 */}
         <Button
@@ -259,10 +225,14 @@ export function ClaimCard({ claim, focused, onHover, onClick }: ClaimCardProps) 
               </DetailSection>
             )}
 
-            {/* Explanation */}
+            {/* Explanation — 다른 섹션과 텍스트 톤 통일(xs) + 은은한 배경으로 LLM 자연어임을 시각적으로 분리 */}
             {claim.explanation && (
               <DetailSection title="AI 설명">
-                <p className="text-sm leading-relaxed">{claim.explanation}</p>
+                <div className="bg-muted/40 rounded-md p-3">
+                  <p className="text-xs leading-relaxed text-foreground/80 whitespace-pre-wrap">
+                    {claim.explanation}
+                  </p>
+                </div>
               </DetailSection>
             )}
           </div>
@@ -271,6 +241,109 @@ export function ClaimCard({ claim, focused, onHover, onClick }: ClaimCardProps) 
     </Card>
   );
 }
+
+// ── 메인 박스 ──────────────────────────────────────────
+// verdict별로 어떤 정보를 보여줄지 결정. evidence + computed_value가 있으면
+// 비교표(기사 vs 공식), 없으면 "검증 시도" 박스(무엇을 검증하려 했는지).
+
+function hasComparison(claim: ClaimResult): boolean {
+  const numericMatch =
+    typeof claim.computed_value === "number" && !Number.isNaN(claim.computed_value);
+  return (
+    (claim.verdict === "match" ||
+      claim.verdict === "mismatch" ||
+      claim.verdict === "partial") &&
+    !!claim.evidence &&
+    (numericMatch || claim.schema?.value !== undefined)
+  );
+}
+
+/** match/mismatch/partial — 기사 주장 vs 공식 통계 비교 */
+function ComparisonBox({ claim }: { claim: ClaimResult }) {
+  const unit = claim.schema?.unit ?? "";
+  return (
+    <div className="bg-muted/40 rounded-md p-3 text-sm space-y-1.5">
+      <div className="flex justify-between gap-3">
+        <span className="text-muted-foreground">기사 주장</span>
+        <span className="font-medium tabular-nums text-right">
+          {claim.schema?.value}
+          {unit}
+        </span>
+      </div>
+      {claim.computed_value !== null && claim.computed_value !== undefined && (
+        <div className="flex justify-between gap-3">
+          <span className="text-muted-foreground">공식 통계</span>
+          <span className="font-medium tabular-nums text-right">
+            {claim.computed_value.toFixed(3)}
+            {unit}
+          </span>
+        </div>
+      )}
+      {claim.formula && (
+        <div className="text-xs text-muted-foreground pt-1.5 border-t border-border/60">
+          {claim.formula}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** unverifiable / partial(비교 없음) / evidence 없음 — "검증 시도" 핵심 요약
+ *
+ *  표시 항목은 의도적으로 최소화 (지표 + 기사 값만).
+ *  시점·대상·explanation·evidence 같은 디테일은 하단 "근거 자세히" 토글에서 확인.
+ */
+function AttemptBox({ claim }: { claim: ClaimResult }) {
+  const schema = claim.schema;
+  const hasIndicator = !!schema?.indicator;
+  const hasValue = schema?.value !== undefined && schema?.value !== null;
+
+  // 둘 다 없으면 박스 자체 생략 (펼치기 토글로 안내됨)
+  if (!hasIndicator && !hasValue) return null;
+
+  return (
+    <div className="bg-muted/40 rounded-md p-3 text-sm space-y-1.5">
+      <div className="text-[10.5px] uppercase tracking-wider text-muted-foreground font-semibold">
+        검증 시도
+      </div>
+
+      {hasIndicator && (
+        <AttemptRow label="지표" value={schema!.indicator} />
+      )}
+      {hasValue && (
+        <AttemptRow
+          label="기사 값"
+          value={`${schema!.value}${schema!.unit ?? ""}`}
+          mono
+        />
+      )}
+    </div>
+  );
+}
+
+function AttemptRow({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex justify-between gap-3">
+      <span className="text-muted-foreground shrink-0">{label}</span>
+      <span
+        className={cn("font-medium text-right truncate", mono && "tabular-nums")}
+        title={value}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+// ── 펼친 상세 영역 헬퍼 ─────────────────────────────────
 
 function DetailSection({
   title,

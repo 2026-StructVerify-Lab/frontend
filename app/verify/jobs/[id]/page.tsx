@@ -12,17 +12,17 @@
 //
 // 폴링: status가 pending/running이면 2초마다 GET.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
 
 import { AppShell } from "@/components/layout/AppShell";
-import { ClaimCard } from "@/components/results/ClaimCard";
+import { ClaimGroup } from "@/components/results/ClaimGroup";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { getJob } from "@/lib/api";
-import type { Job } from "@/lib/types";
+import type { ClaimResult, Job } from "@/lib/types";
 
 // PDFViewer는 SSR 비활성 (react-pdf가 브라우저 전용)
 const PDFViewer = dynamic(
@@ -70,6 +70,25 @@ export default function JobResultPage() {
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
+  // 같은 문장(claim_text)을 가진 claim들을 한 그룹으로 묶기.
+  // ⚠️ Hook은 early return보다 반드시 위에 있어야 함 (호출 순서 일관성).
+  //    job이 아직 null일 때도 claims를 안전하게 가져오도록 옵셔널 체이닝.
+  const sentenceGroups = useMemo(() => {
+    const claims = job?.result?.claims ?? [];
+    const normalize = (s: string) => s.trim().replace(/\s+/g, " ");
+    const map = new Map<string, ClaimResult[]>();
+    for (const c of claims) {
+      const key = normalize(c.claim_text ?? "");
+      const arr = map.get(key) ?? [];
+      arr.push(c);
+      map.set(key, arr);
+    }
+    return Array.from(map.entries()).map(([sentence, items]) => ({
+      sentence,
+      claims: items,
+    }));
+  }, [job?.result?.claims]);
+
   if (error) {
     return (
       <AppShell>
@@ -98,24 +117,26 @@ export default function JobResultPage() {
   if (job.status === "pending" || job.status === "running") {
     return (
       <AppShell>
-        <div className="container max-w-2xl py-8 space-y-4">
-          <div>
-            <h1 className="text-2xl font-semibold">검증 중</h1>
-            <p className="text-sm text-muted-foreground mt-1">
+        <div className="container max-w-2xl py-10 space-y-6">
+          <div className="space-y-1">
+            <h1 className="text-[28px] font-bold tracking-tight">검증 중</h1>
+            <p className="text-sm text-muted-foreground">
               다른 페이지로 이동해도 진행 상황은 우측 하단에 계속 표시됩니다.
             </p>
           </div>
-          <Card>
-            <CardContent className="p-6 space-y-4">
+          <Card className="shadow-none">
+            <CardContent className="p-6 space-y-5">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">
+                <span className="text-[13.5px] font-medium">
                   {job.current_step ?? "준비 중…"}
                 </span>
-                <span className="text-sm tabular-nums">{job.progress}%</span>
+                <span className="text-[13px] text-muted-foreground tabular-nums">
+                  {job.progress}%
+                </span>
               </div>
-              <div className="h-2 bg-muted rounded overflow-hidden">
+              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-primary transition-all duration-500"
+                  className="h-full bg-foreground/70 transition-all duration-500 ease-out"
                   style={{ width: `${job.progress}%` }}
                 />
               </div>
@@ -218,11 +239,19 @@ export default function JobResultPage() {
                 </Card>
               )}
               <Separator />
-              {claims.map((claim) => (
-                <ClaimCard
-                  key={claim.sent_id}
-                  claim={claim}
-                  focused={focusedClaimId === claim.sent_id}
+              {/* 안내 — 그룹 사용법 힌트 */}
+              <p className="text-[11.5px] text-muted-foreground -mb-2 px-1">
+                {sentenceGroups.some((g) => g.claims.length > 1)
+                  ? "하나의 문장에서 여러 검증 결과가 나올 수 있어요. "
+                  : ""}
+                각 그룹의 헤더를 클릭하면 접고 펼칠 수 있습니다.
+              </p>
+              {sentenceGroups.map((group, idx) => (
+                <ClaimGroup
+                  key={`${idx}-${group.claims[0]?.sent_id}`}
+                  sentence={group.sentence}
+                  claims={group.claims}
+                  focusedClaimId={focusedClaimId}
                   onHover={setFocusedClaimId}
                   onClick={handleClaimClick}
                 />
@@ -265,9 +294,9 @@ function ProgressSteps({ currentProgress }: { currentProgress: number }) {
             <span
               className={
                 done
-                  ? "text-emerald-500"
+                  ? "text-verdict-match"
                   : active
-                  ? "text-primary"
+                  ? "text-foreground"
                   : "text-muted-foreground/40"
               }
               aria-hidden

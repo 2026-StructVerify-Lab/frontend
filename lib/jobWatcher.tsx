@@ -20,6 +20,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { toast } from "sonner";
 
 import { getJob } from "./api";
 import type { Job, JobStatus } from "./types";
@@ -36,6 +37,10 @@ interface JobWatcherContextValue {
   watching: WatchingJob[];
   watch: (jobId: string) => void;
   unwatch: (jobId: string) => void;
+  /** 진행 중(pending/running) job이 하나라도 있는지 */
+  hasActiveJob: boolean;
+  /** 진행 중인 첫 번째 job (없으면 null) — 결과 페이지 링크용 */
+  activeJob: WatchingJob | null;
 }
 
 const JobWatcherContext = createContext<JobWatcherContextValue | null>(null);
@@ -80,11 +85,37 @@ export function JobWatcherProvider({
             )
           );
 
-          // 완료/실패 시 30초 후 자동 제거
+          // 완료/실패 시:
+          //   1. 토스트로 알림 (한 번만 — completedRemovalTimers로 중복 방지)
+          //   2. 30초 후 watching에서 자동 제거
           if (
             (job.status === "completed" || job.status === "failed") &&
             !completedRemovalTimers.current.has(w.id)
           ) {
+            if (job.status === "completed") {
+              toast.success("검증이 완료되었습니다", {
+                description: "결과를 확인해 보세요.",
+                duration: 8000,
+                action: {
+                  label: "결과 보기",
+                  onClick: () => {
+                    window.location.href = `/verify/jobs/${w.id}`;
+                  },
+                },
+              });
+            } else {
+              toast.error("검증에 실패했습니다", {
+                description: "결과 페이지에서 자세한 내용을 확인하세요.",
+                duration: 8000,
+                action: {
+                  label: "상세 보기",
+                  onClick: () => {
+                    window.location.href = `/verify/jobs/${w.id}`;
+                  },
+                },
+              });
+            }
+
             const timer = setTimeout(() => {
               setWatching((prev) => prev.filter((p) => p.id !== w.id));
               completedRemovalTimers.current.delete(w.id);
@@ -137,8 +168,15 @@ export function JobWatcherProvider({
     }
   }, []);
 
+  const activeJob =
+    watching.find((w) => w.status === "pending" || w.status === "running") ??
+    null;
+  const hasActiveJob = activeJob !== null;
+
   return (
-    <JobWatcherContext.Provider value={{ watching, watch, unwatch }}>
+    <JobWatcherContext.Provider
+      value={{ watching, watch, unwatch, hasActiveJob, activeJob }}
+    >
       {children}
     </JobWatcherContext.Provider>
   );
@@ -152,6 +190,8 @@ export function useJobWatcher(): JobWatcherContextValue {
       watching: [],
       watch: () => {},
       unwatch: () => {},
+      hasActiveJob: false,
+      activeJob: null,
     };
   }
   return ctx;

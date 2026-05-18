@@ -15,6 +15,7 @@ import {
 
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/useAuth";
+import { ThemeToggle } from "@/components/layout/ThemeToggle";
 
 const navItems = [
   { href: "/dashboard", label: "대시보드", icon: LayoutDashboard },
@@ -29,16 +30,19 @@ export function Sidebar() {
   const { user, tenant, logout, loading } = useAuth();
 
   return (
-    <aside className="w-60 border-r bg-muted/30 flex flex-col">
-      {/* 상단 로고 */}
-      <div className="p-4 border-b">
-        <Link href="/dashboard" className="font-semibold text-lg">
+    <aside className="w-60 border-r border-border bg-secondary flex flex-col">
+      {/* 상단 로고 — 노션처럼 살짝 작고 차분하게 */}
+      <div className="px-4 h-14 flex items-center">
+        <Link
+          href="/dashboard"
+          className="font-semibold text-[15px] tracking-tight text-foreground"
+        >
           Structverify
         </Link>
       </div>
 
-      {/* 네비 */}
-      <nav className="flex-1 p-2 space-y-1">
+      {/* 네비 — 노션 스타일: 작은 글자, 좁은 패딩, 호버는 한 톤만 어두워짐 */}
+      <nav className="flex-1 px-2 pb-2 space-y-0.5">
         {navItems.map((item) => {
           const Icon = item.icon;
           const active =
@@ -48,63 +52,71 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
+                "flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13.5px] font-medium transition-colors",
                 active
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:bg-accent/70 hover:text-foreground"
               )}
             >
-              <Icon className="h-4 w-4" />
+              <Icon className="h-[15px] w-[15px]" />
               {item.label}
             </Link>
           );
         })}
       </nav>
 
-      {/* 하단 사용자 프로필 */}
-      <div className="border-t p-3">
+      {/* 테마 토글 — 네비와 프로필 사이 */}
+      <div className="px-2 pb-1">
+        <ThemeToggle />
+      </div>
+
+      {/* 하단 사용자 프로필 — 노션처럼 살짝 분리만 (구분선 약하게) */}
+      <div className="p-2 border-t border-border/60">
         {loading ? (
-          <div className="flex items-center gap-2 px-1 py-2">
-            <div className="h-8 w-8 rounded-full bg-muted animate-pulse" />
+          <div className="flex items-center gap-2 px-2 py-1.5">
+            <div className="h-7 w-7 rounded-full bg-muted animate-pulse" />
             <div className="flex-1 min-w-0">
               <div className="h-3 w-20 bg-muted rounded animate-pulse mb-1" />
               <div className="h-2.5 w-16 bg-muted rounded animate-pulse" />
             </div>
           </div>
         ) : user ? (
-          <div className="flex items-center gap-2">
-            {/* 아바타 — 이메일 첫 글자 */}
-            <div className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium shrink-0">
+          <div className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent/70 transition-colors">
+            {/* 아바타 — 노션 톤 다크그레이 */}
+            <div className="h-7 w-7 rounded-md bg-foreground text-background flex items-center justify-center text-[12px] font-semibold shrink-0">
               {user.email.charAt(0).toUpperCase()}
             </div>
             {/* 사용자 정보 */}
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium truncate" title={user.email}>
+              <p
+                className="text-[12.5px] font-medium text-foreground truncate"
+                title={user.email}
+              >
                 {user.email}
               </p>
               {tenant && (
                 <p
-                  className="text-xs text-muted-foreground truncate"
+                  className="text-[11.5px] text-muted-foreground truncate"
                   title={`${tenant.name} · ${tenant.plan}`}
                 >
                   {tenant.name}
                 </p>
               )}
             </div>
-            {/* 로그아웃 */}
+            {/* 로그아웃 — 평소엔 숨기고 hover시 노출 (노션 느낌) */}
             <button
               onClick={logout}
-              className="p-1.5 rounded-md text-muted-foreground hover:bg-background hover:text-foreground transition-colors shrink-0"
+              className="p-1 rounded text-muted-foreground hover:bg-background hover:text-foreground transition-all opacity-0 group-hover:opacity-100 shrink-0"
               title="로그아웃"
               aria-label="로그아웃"
             >
-              <LogOut className="h-4 w-4" />
+              <LogOut className="h-3.5 w-3.5" />
             </button>
           </div>
         ) : (
           <Link
             href="/login"
-            className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-background hover:text-foreground"
+            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[13.5px] text-muted-foreground hover:bg-accent/70 hover:text-foreground"
           >
             로그인
           </Link>
