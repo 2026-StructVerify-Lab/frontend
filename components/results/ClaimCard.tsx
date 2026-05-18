@@ -258,11 +258,19 @@ function hasComparison(claim: ClaimResult): boolean {
   );
 }
 
-/** match/mismatch/partial — 기사 주장 vs 공식 통계 비교 */
+/** match/mismatch/partial — 검증 시도 (지표 + 기사 주장 vs 공식 통계 비교) */
 function ComparisonBox({ claim }: { claim: ClaimResult }) {
   const unit = claim.schema?.unit ?? "";
   return (
     <div className="bg-muted/40 rounded-md p-3 text-sm space-y-1.5">
+      <div className="text-[10.5px] uppercase tracking-wider text-muted-foreground font-semibold">
+        검증 시도
+      </div>
+
+      {claim.schema?.indicator && (
+        <AttemptRow label="지표" value={claim.schema.indicator} />
+      )}
+
       <div className="flex justify-between gap-3">
         <span className="text-muted-foreground">기사 주장</span>
         <span className="font-medium tabular-nums text-right">

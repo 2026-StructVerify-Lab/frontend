@@ -108,4 +108,33 @@
 .dark .pdf-highlight.mismatch    { color: hsl(0 70% 70%); }
 .dark .pdf-highlight.partial     { color: hsl(40 80% 65%); }
 .dark .pdf-highlight.unverifiable{ color: hsl(40 4% 70%); }
+
+/* 원문 텍스트 위 인라인 하이라이트 — 검증된 문장 표시용 */
+.claim-highlight {
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 1px 3px;
+  margin: 0 -1px;
+  transition: background-color 0.12s ease, box-shadow 0.12s ease;
+  /* 줄바꿈 자연스럽게 */
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.claim-highlight.match       { background: rgba(15, 123, 108, 0.14); }
+.claim-highlight.mismatch    { background: rgba(224, 62, 62, 0.16); }
+.claim-highlight.partial     { background: rgba(223, 171, 1, 0.18); }
+.claim-highlight.unverifiable{ background: rgba(120, 119, 116, 0.12); }
+
+.claim-highlight:hover {
+  filter: brightness(0.95) saturate(1.15);
+}
+.claim-highlight.focused {
+  box-shadow: 0 0 0 2px hsl(var(--foreground) / 0.25);
+}
+
+/* 다크 모드 — 배경 톤 살짝 ↑ (어두운 배경에서도 보이게) */
+.dark .claim-highlight.match       { background: rgba(74, 222, 128, 0.18); }
+.dark .claim-highlight.mismatch    { background: rgba(248, 113, 113, 0.22); }
+.dark .claim-highlight.partial     { background: rgba(250, 204, 21, 0.22); }
+.dark .claim-highlight.unverifiable{ background: rgba(161, 161, 170, 0.18); }
 .pdf-highlight.focused     { outline: 2px solid currentColor; opacity: 0.9; }

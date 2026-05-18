@@ -19,8 +19,8 @@ const TooltipContent = React.forwardRef<
     ref={ref}
     sideOffset={sideOffset}
     className={cn(
-      // 노션 톤 — 본문 글자색을 배경으로, 따뜻한 그레이
-      "z-50 overflow-hidden rounded-md border border-border bg-popover px-2.5 py-1.5 text-[12px] text-popover-foreground shadow-sm",
+      // 노션 톤 — 솔리드 배경 + 강한 그림자로 본문 위에 떠 있는 느낌 명확하게
+      "z-50 overflow-hidden rounded-md border border-foreground/15 bg-popover px-2.5 py-1.5 text-[12px] text-popover-foreground shadow-md",
       "animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
       "data-[side=bottom]:slide-in-from-top-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1",
       className

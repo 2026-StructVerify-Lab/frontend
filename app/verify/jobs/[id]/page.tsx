@@ -18,6 +18,7 @@ import dynamic from "next/dynamic";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { ClaimGroup } from "@/components/results/ClaimGroup";
+import { HighlightedSource } from "@/components/results/HighlightedSource";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -37,6 +38,12 @@ export default function JobResultPage() {
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [focusedClaimId, setFocusedClaimId] = useState<string | null>(null);
+  // 클릭으로만 발동되는 펼침/스크롤 신호 (hover와 분리)
+  // ts를 같이 보내서 같은 id를 다시 클릭해도 effect가 재발동되게 함
+  const [scrollTarget, setScrollTarget] = useState<{
+    id: string;
+    ts: number;
+  } | null>(null);
 
   // 초기 로딩 + polling
   useEffect(() => {
@@ -63,11 +70,18 @@ export default function JobResultPage() {
     };
   }, [jobId]);
 
-  // 카드 클릭 시 해당 위치로 스크롤 (PDF에서)
+  // 카드 클릭 시 (원문/PDF/JobsBadge에서 → 결과 카드로)
+  // scrollTarget 신호로 ClaimGroup의 자동 펼침을 트리거 + 스크롤
   function handleClaimClick(sentId: string) {
     setFocusedClaimId(sentId);
-    const el = document.getElementById(`claim-${sentId}`);
-    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setScrollTarget({ id: sentId, ts: Date.now() });
+    // 1) 그룹의 expand effect가 발동될 시간 + 2) DOM 업데이트 시간 확보
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`claim-${sentId}`);
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    });
   }
 
   // 같은 문장(claim_text)을 가진 claim들을 한 그룹으로 묶기.
@@ -227,14 +241,18 @@ export default function JobResultPage() {
           <div className={isPdf ? "w-1/2 overflow-auto" : "flex-1 overflow-auto"}>
             <div className="max-w-3xl mx-auto p-6 space-y-4">
               {!isPdf && job.source_data && (
-                <Card>
+                <Card className="shadow-none">
                   <CardContent className="p-4">
-                    <h3 className="text-sm font-semibold text-muted-foreground mb-2">
+                    <h3 className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground mb-2">
                       원문
                     </h3>
-                    <p className="text-sm whitespace-pre-wrap leading-relaxed">
-                      {job.source_data}
-                    </p>
+                    <HighlightedSource
+                      source={job.source_data}
+                      groups={sentenceGroups}
+                      focusedClaimId={focusedClaimId}
+                      onHover={setFocusedClaimId}
+                      onClick={handleClaimClick}
+                    />
                   </CardContent>
                 </Card>
               )}
@@ -252,6 +270,7 @@ export default function JobResultPage() {
                   sentence={group.sentence}
                   claims={group.claims}
                   focusedClaimId={focusedClaimId}
+                  scrollTarget={scrollTarget}
                   onHover={setFocusedClaimId}
                   onClick={handleClaimClick}
                 />

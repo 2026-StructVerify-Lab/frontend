@@ -44,6 +44,10 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        popover: {
+          DEFAULT: "hsl(var(--popover))",
+          foreground: "hsl(var(--popover-foreground))",
+        },
         // verdict 전용 의미 색 — 노션 팔레트 톤으로 채도 ↓
         verdict: {
           match: "hsl(168 78% 30%)",      // 노션 그린 #0F7B6C 계열

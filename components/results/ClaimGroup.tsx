@@ -32,7 +32,10 @@ interface ClaimGroupProps {
   sentence: string;
   /** 이 문장에서 추출된 claim들 */
   claims: ClaimResult[];
+  /** 단순 호버 강조용 (펼침은 트리거하지 않음) */
   focusedClaimId: string | null;
+  /** 클릭으로만 발동되는 스크롤/펼침 신호. id가 매칭되면 그룹 자동 펼침 */
+  scrollTarget?: { id: string; ts: number } | null;
   onHover: (id: string | null) => void;
   onClick: (id: string) => void;
 }
@@ -41,20 +44,22 @@ export function ClaimGroup({
   sentence,
   claims,
   focusedClaimId,
+  scrollTarget,
   onHover,
   onClick,
 }: ClaimGroupProps) {
   const [expanded, setExpanded] = useState(true);
 
-  // focus된 claim이 이 그룹에 있으면 자동 펼침 (접혀 있어도 카드 보이게)
+  // 클릭 신호(scrollTarget)가 이 그룹의 claim과 매칭될 때만 자동 펼침.
+  // 호버만으로는 펼치지 않음 (사용자 의도와 다르게 본문 흔들리는 거 방지).
   useEffect(() => {
     if (
-      focusedClaimId &&
-      claims.some((c) => c.sent_id === focusedClaimId)
+      scrollTarget &&
+      claims.some((c) => c.sent_id === scrollTarget.id)
     ) {
       setExpanded(true);
     }
-  }, [focusedClaimId, claims]);
+  }, [scrollTarget, claims]);
 
   // verdict 분포
   const dist = claims.reduce((acc, c) => {
