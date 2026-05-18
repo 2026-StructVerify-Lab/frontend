@@ -18,3 +18,7 @@ dist
 build
 .cache
 
+# OS / 에디터 파일 — macOS Finder가 생성하는 메타데이터
+.DS_Store
+*.DS_Store
+
