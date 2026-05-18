@@ -10,6 +10,9 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { login, setAuthToken } from "@/lib/api";
 
+/** 한글(자모/완성형) 즉시 제거 — 이메일/비밀번호용 */
+const stripKorean = (s: string) => s.replace(/[ㄱ-ㅎㅏ-ㅣ가-힣]/g, "");
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -47,7 +50,13 @@ export default function LoginPage() {
                 type="email"
                 required
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => setEmail(stripKorean(e.target.value))}
+                placeholder="you@example.com"
+                lang="en"
+                inputMode="email"
+                autoComplete="email"
+                autoCapitalize="off"
+                spellCheck={false}
               />
             </div>
             <div className="space-y-2">
@@ -57,7 +66,11 @@ export default function LoginPage() {
                 type="password"
                 required
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => setPassword(stripKorean(e.target.value))}
+                lang="en"
+                autoComplete="current-password"
+                autoCapitalize="off"
+                spellCheck={false}
               />
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}

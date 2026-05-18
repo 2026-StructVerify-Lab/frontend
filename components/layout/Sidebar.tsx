@@ -4,6 +4,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import {
   LayoutDashboard,
   FileSearch,
@@ -16,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/useAuth";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 const navItems = [
   { href: "/dashboard", label: "대시보드", icon: LayoutDashboard },
@@ -28,6 +30,7 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname();
   const { user, tenant, logout, loading } = useAuth();
+  const [logoutOpen, setLogoutOpen] = useState(false);
 
   return (
     <aside className="w-60 border-r border-border bg-secondary flex flex-col">
@@ -103,9 +106,9 @@ export function Sidebar() {
                 </p>
               )}
             </div>
-            {/* 로그아웃 — 평소엔 숨기고 hover시 노출 (노션 느낌) */}
+            {/* 로그아웃 — 평소엔 숨기고 hover시 노출. 클릭하면 확인 다이얼로그 */}
             <button
-              onClick={logout}
+              onClick={() => setLogoutOpen(true)}
               className="p-1 rounded text-muted-foreground hover:bg-background hover:text-foreground transition-all opacity-0 group-hover:opacity-100 shrink-0"
               title="로그아웃"
               aria-label="로그아웃"
@@ -122,6 +125,18 @@ export function Sidebar() {
           </Link>
         )}
       </div>
+
+      {/* 로그아웃 확인 다이얼로그 */}
+      <ConfirmDialog
+        open={logoutOpen}
+        onOpenChange={setLogoutOpen}
+        title="로그아웃 하시겠습니까?"
+        description="다시 로그인하셔야 검증 결과와 API 키에 접근할 수 있습니다."
+        confirmText="로그아웃"
+        cancelText="취소"
+        destructive
+        onConfirm={logout}
+      />
     </aside>
   );
 }
