@@ -2,9 +2,12 @@
 
 // components/results/HighlightedSource.tsx
 //
-// 원문(source_data) 위에 검증된 문장을 verdict 색으로 하이라이트.
+// 원문(source_data) 위에 검증된 "수치"만 verdict 색으로 하이라이트.
+// 문장 전체가 아니라 schema.value(+unit)만 잡아서 본문 가독성을 살림.
+//
 // - 호버: Tooltip으로 verdict 분포 + "클릭해서 결과 보기" 안내
-// - 클릭: 해당 그룹의 결과 카드로 스크롤
+// - 클릭: 해당 결과 카드로 스크롤
+// - 같은 수치를 가리키는 claim 여러 개면 → 우선순위 색 + 작은 색점 인디케이터
 
 import { Fragment } from "react";
 
@@ -23,12 +26,19 @@ const VERDICT_LABEL: Record<Verdict, string> = {
   unverifiable: "검증 불가",
 };
 
-// 그룹 대표 verdict 우선순위 — 사용자가 가장 주목해야 할 것 우선
-//   mismatch(빨강) > partial(노랑) > unverifiable(회색) > match(초록)
+const DOT_BG: Record<Verdict, string> = {
+  match: "bg-verdict-match",
+  mismatch: "bg-verdict-mismatch",
+  partial: "bg-verdict-partial",
+  unverifiable: "bg-verdict-unverifiable",
+};
+
+// 색 우선순위 — "가장 주목해야 할 결과" 우선
+//   mismatch(빨강, 위험) > unverifiable(회색, 주의) > partial(노랑) > match(초록, 안심)
 const PRIORITY: Record<Verdict, number> = {
   mismatch: 4,
-  partial: 3,
-  unverifiable: 2,
+  unverifiable: 3,
+  partial: 2,
   match: 1,
 };
 
@@ -46,41 +56,111 @@ function dominantVerdict(claims: ClaimResult[]): Verdict {
   return best;
 }
 
+function verdictsInGroup(claims: ClaimResult[]): Verdict[] {
+  const set = new Set<Verdict>();
+  for (const c of claims) {
+    set.add((c.verdict ?? "unverifiable") as Verdict);
+  }
+  return Array.from(set).sort(
+    (a, b) => (PRIORITY[b] ?? 0) - (PRIORITY[a] ?? 0)
+  );
+}
+
+// ── 매칭 알고리즘 ────────────────────────────────────────
+
+function addCommas(s: string): string {
+  return s.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+/**
+ * 한 claim의 schema.value를 source에서 찾기 위한 후보 문자열들 생성.
+ * 우선순위 순서대로 시도:
+ *   1. "6.7%" — value + unit (가장 정확)
+ *   2. "20,171" / "20171" — 큰 수는 콤마 변형도 시도
+ *   3. "6.7"   — value만 (unit이 없는 경우 / 본문이 unit 다음에 적어둔 경우)
+ */
+function buildSearchCandidates(claim: ClaimResult): string[] {
+  const v = claim.schema?.value;
+  if (v === undefined || v === null) return [];
+  const unit = claim.schema?.unit ?? "";
+  const vs = String(v);
+  const candidates: string[] = [];
+
+  // 정수 + 천 단위 이상이면 콤마 변형도 시도
+  const isLargeInt = /^\d{4,}$/.test(vs);
+  const commaed = isLargeInt ? addCommas(vs) : null;
+
+  if (unit) {
+    candidates.push(vs + unit);
+    if (commaed) candidates.push(commaed + unit);
+    candidates.push(vs + " " + unit); // 공백 포함 변형
+  }
+  if (commaed) candidates.push(commaed);
+  candidates.push(vs);
+  return candidates;
+}
+
+interface ValueMatch {
+  start: number;
+  end: number;
+  /** 이 위치를 가리키는 claim들 (중복 가능 — 같은 수치를 여러 검증이 사용) */
+  claims: ClaimResult[];
+}
+
+/** source에서 모든 claim의 value 위치 찾기 */
+function findValueMatches(source: string, claims: ClaimResult[]): ValueMatch[] {
+  const matches: ValueMatch[] = [];
+
+  for (const claim of claims) {
+    const candidates = buildSearchCandidates(claim);
+    let found: { start: number; end: number } | null = null;
+
+    for (const cand of candidates) {
+      const idx = source.indexOf(cand);
+      if (idx !== -1) {
+        found = { start: idx, end: idx + cand.length };
+        break;
+      }
+    }
+    if (!found) continue;
+
+    // 같은 위치에 이미 매칭된 match가 있으면 claim만 추가, 없으면 새로
+    const existing = matches.find(
+      (m) => m.start === found!.start && m.end === found!.end
+    );
+    if (existing) {
+      existing.claims.push(claim);
+    } else {
+      matches.push({ ...found, claims: [claim] });
+    }
+  }
+
+  // 시작 위치 기준 정렬 + 중첩 제거 (먼저 시작한 것 우선)
+  matches.sort((a, b) => a.start - b.start);
+  const nonOverlap: ValueMatch[] = [];
+  let cursor = 0;
+  for (const m of matches) {
+    if (m.start >= cursor) {
+      nonOverlap.push(m);
+      cursor = m.end;
+    }
+  }
+  return nonOverlap;
+}
+
+// ── 컴포넌트 ────────────────────────────────────────
+
 interface Group {
   sentence: string;
   claims: ClaimResult[];
 }
 
 interface HighlightedSourceProps {
-  /** 원문 전체 */
   source: string;
-  /** 그룹화된 claim들 */
   groups: Group[];
-  /** 현재 focus된 claim id — 매칭되는 그룹은 강조 */
   focusedClaimId: string | null;
-  /** 호버 시 부모에 알림 (PDFViewer 동기화 등) */
   onHover: (sentId: string | null) => void;
-  /** 클릭 시 결과 카드로 스크롤 */
   onClick: (sentId: string) => void;
-}
-
-/**
- * claim_text를 source에서 찾을 정규식 빌더.
- *
- * 문제: 원문은 줄바꿈(\n)이 있고 claim_text는 공백 1칸으로 합쳐져 오는 경우가 많음.
- *      `indexOf`만으로는 매칭 실패.
- *
- * 해결: 문장의 모든 공백류를 `\s+`로 치환한 정규식으로 매칭. 줄바꿈/탭/연속 공백
- *      모두 허용. 정규식 메타문자는 안전하게 escape.
- */
-function buildFlexiblePattern(sentence: string): RegExp {
-  const PLACEHOLDER = "\x00WS\x00";
-  const withMarker = sentence.replace(/\s+/g, PLACEHOLDER);
-  // 정규식 특수문자 escape
-  const escaped = withMarker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // marker → \s+
-  const pattern = escaped.split(PLACEHOLDER).join("\\s+");
-  return new RegExp(pattern);
 }
 
 export function HighlightedSource({
@@ -90,75 +170,25 @@ export function HighlightedSource({
   onHover,
   onClick,
 }: HighlightedSourceProps) {
-  // 원문에서 각 그룹 문장의 위치 찾기 — 공백 차이 허용 정규식 매칭
-  const matches: Array<{
-    start: number;
-    end: number;
-    group: Group;
-  }> = [];
+  // 모든 claim flatten
+  const allClaims = groups.flatMap((g) => g.claims);
+  const matches = findValueMatches(source, allClaims);
 
-  for (const group of groups) {
-    if (!group.sentence) continue;
-
-    // 1순위: 공백 유연 정규식 매칭 (줄바꿈/탭/연속 공백 OK)
-    try {
-      const re = buildFlexiblePattern(group.sentence);
-      const m = source.match(re);
-      if (m && m.index !== undefined) {
-        matches.push({
-          start: m.index,
-          end: m.index + m[0].length,
-          group,
-        });
-        continue;
-      }
-    } catch {
-      // 정규식 빌드 실패는 무시하고 fallback으로
-    }
-
-    // 2순위: 정확 일치
-    let idx = source.indexOf(group.sentence);
-    if (idx === -1) {
-      // 3순위: 첫 20자 head 매칭 (그래도 안 잡히는 케이스 대비)
-      const head = group.sentence.slice(0, 20).replace(/\s+/g, " ").trim();
-      if (head) idx = source.indexOf(head);
-    }
-    if (idx !== -1) {
-      matches.push({
-        start: idx,
-        end: Math.min(idx + group.sentence.length, source.length),
-        group,
-      });
-    }
-  }
-
-  // 시작 위치 기준 정렬 + 중첩 제거 (먼저 잡힌 게 우선)
-  matches.sort((a, b) => a.start - b.start);
-  const nonOverlap: typeof matches = [];
-  let cursor = 0;
-  for (const m of matches) {
-    if (m.start >= cursor) {
-      nonOverlap.push(m);
-      cursor = m.end;
-    }
-  }
-
-  // 원문을 텍스트 / 하이라이트 조각으로 나눠 렌더
+  // 원문을 텍스트 / 하이라이트 조각으로 잘라서 렌더
   const parts: React.ReactNode[] = [];
   let pos = 0;
-  for (let i = 0; i < nonOverlap.length; i++) {
-    const m = nonOverlap[i];
+  for (const m of matches) {
     if (m.start > pos) {
       parts.push(
         <Fragment key={`t-${pos}`}>{source.slice(pos, m.start)}</Fragment>
       );
     }
     parts.push(
-      <HighlightedSentence
-        key={`h-${m.start}`}
+      <HighlightedValue
+        key={`v-${m.start}`}
         text={source.slice(m.start, m.end)}
-        group={m.group}
-        focused={m.group.claims.some((c) => c.sent_id === focusedClaimId)}
+        claims={m.claims}
+        focused={m.claims.some((c) => c.sent_id === focusedClaimId)}
         onHover={onHover}
         onClick={onClick}
       />
@@ -166,7 +196,7 @@ export function HighlightedSource({
     pos = m.end;
   }
   if (pos < source.length) {
-    parts.push(<Fragment key={`t-end`}>{source.slice(pos)}</Fragment>);
+    parts.push(<Fragment key="t-end">{source.slice(pos)}</Fragment>);
   }
 
   return (
@@ -174,28 +204,25 @@ export function HighlightedSource({
   );
 }
 
-// ── 하이라이트된 한 문장 ───────────────────────────────────
+// ── 하이라이트된 수치 ──────────────────────────────────────
 
-function HighlightedSentence({
+function HighlightedValue({
   text,
-  group,
+  claims,
   focused,
   onHover,
   onClick,
 }: {
   text: string;
-  group: Group;
+  claims: ClaimResult[];
   focused: boolean;
   onHover: (sentId: string | null) => void;
   onClick: (sentId: string) => void;
 }) {
-  const verdict = dominantVerdict(group.claims);
-  const firstSentId = group.claims[0]?.sent_id;
-  const dist = group.claims.reduce((acc, c) => {
-    const v = (c.verdict ?? "unverifiable") as Verdict;
-    acc[v] = (acc[v] ?? 0) + 1;
-    return acc;
-  }, {} as Partial<Record<Verdict, number>>);
+  const verdict = dominantVerdict(claims);
+  const distinctVerdicts = verdictsInGroup(claims);
+  const isMixed = distinctVerdicts.length > 1;
+  const firstSentId = claims[0]?.sent_id;
 
   return (
     <Tooltip>
@@ -218,29 +245,37 @@ function HighlightedSentence({
           }}
         >
           {text}
+          {/* 혼합 verdict — 어떤 결과들이 섞였는지 점으로 표시 */}
+          {isMixed && (
+            <span
+              className="inline-flex items-center gap-[2px] ml-1 align-middle whitespace-nowrap"
+              aria-label="여러 verdict 혼합"
+            >
+              {distinctVerdicts.map((v) => (
+                <span
+                  key={v}
+                  className={cn(
+                    "h-[6px] w-[6px] rounded-full ring-1 ring-background",
+                    DOT_BG[v]
+                  )}
+                />
+              ))}
+            </span>
+          )}
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" align="start" className="max-w-[280px]">
         <div className="space-y-1">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {(Object.entries(dist) as [Verdict, number][]).map(([v, count]) => (
+          <div className="flex items-center gap-2 flex-wrap">
+            {distinctVerdicts.map((v) => (
               <span
                 key={v}
                 className="inline-flex items-center gap-1 text-[11.5px]"
               >
                 <span
-                  className={cn(
-                    "h-1.5 w-1.5 rounded-full",
-                    v === "match" && "bg-verdict-match",
-                    v === "mismatch" && "bg-verdict-mismatch",
-                    v === "partial" && "bg-verdict-partial",
-                    v === "unverifiable" && "bg-verdict-unverifiable"
-                  )}
+                  className={cn("h-1.5 w-1.5 rounded-full", DOT_BG[v])}
                 />
                 <span className="font-medium">{VERDICT_LABEL[v]}</span>
-                <span className="text-muted-foreground tabular-nums">
-                  {count}
-                </span>
               </span>
             ))}
           </div>
