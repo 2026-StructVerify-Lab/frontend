@@ -15,14 +15,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
+import { FileText, Printer } from "lucide-react";
+import { toast } from "sonner";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { ClaimGroup } from "@/components/results/ClaimGroup";
 import { HighlightedSource } from "@/components/results/HighlightedSource";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { getJob } from "@/lib/api";
+import { downloadJobAsTxt, printAsPdf } from "@/lib/exporters";
 import type { ClaimResult, Job } from "@/lib/types";
 
 // PDFViewer는 SSR 비활성 (react-pdf가 브라우저 전용)
@@ -44,6 +48,9 @@ export default function JobResultPage() {
     id: string;
     ts: number;
   } | null>(null);
+
+  // PDF 인쇄 시 모든 그룹을 펼치기 위한 카운터 — 값이 바뀔 때마다 발동
+  const [expandAllCounter, setExpandAllCounter] = useState(0);
 
   // 초기 로딩 + polling
   useEffect(() => {
@@ -82,6 +89,27 @@ export default function JobResultPage() {
         el?.scrollIntoView({ behavior: "smooth", block: "center" });
       });
     });
+  }
+
+  // TXT 다운로드
+  function handleDownloadTxt() {
+    if (!job) return;
+    try {
+      downloadJobAsTxt(job);
+      toast.success("TXT 파일이 다운로드되었습니다");
+    } catch (err) {
+      toast.error("다운로드에 실패했습니다");
+    }
+  }
+
+  // PDF 인쇄 — 인쇄 dialog 띄우기 전에 모든 그룹 펼침
+  function handleDownloadPdf() {
+    setExpandAllCounter((c) => c + 1);
+    toast.info("인쇄 대화상자에서 'PDF로 저장'을 선택하세요", {
+      duration: 4000,
+    });
+    // 펼침 effect + DOM 반영 대기 후 print 호출
+    setTimeout(() => printAsPdf(), 250);
   }
 
   // 같은 문장(claim_text)을 가진 claim들을 한 그룹으로 묶기.
@@ -201,7 +229,7 @@ export default function JobResultPage() {
         <div className="px-6 py-4 border-b bg-background">
 
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
               <h1 className="text-xl font-semibold truncate">
                 검증 결과 · {jobId.slice(0, 8)}
@@ -212,16 +240,40 @@ export default function JobResultPage() {
                 claims {claims.length}
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              {report.verdict_distribution &&
-                Object.entries(report.verdict_distribution).map(
-                  ([verdict, count]) =>
-                    count > 0 && (
-                      <Badge key={verdict} variant={verdict as any}>
-                        {verdict} {count}
-                      </Badge>
-                    )
-                )}
+            <div className="flex items-center gap-2 shrink-0" data-no-print>
+              {/* verdict 분포 배지 */}
+              <div className="flex items-center gap-1.5">
+                {report.verdict_distribution &&
+                  Object.entries(report.verdict_distribution).map(
+                    ([verdict, count]) =>
+                      count > 0 && (
+                        <Badge key={verdict} variant={verdict as any}>
+                          {verdict} {count}
+                        </Badge>
+                      )
+                  )}
+              </div>
+              {/* 구분선 */}
+              <div className="h-5 w-px bg-border mx-1" aria-hidden />
+              {/* 다운로드 버튼들 */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDownloadTxt}
+                title="검증 결과를 텍스트 파일로 저장"
+              >
+                <FileText className="h-3.5 w-3.5 mr-1.5" />
+                TXT
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDownloadPdf}
+                title="브라우저 인쇄 대화상자로 PDF 저장"
+              >
+                <Printer className="h-3.5 w-3.5 mr-1.5" />
+                PDF
+              </Button>
             </div>
           </div>
         </div>
@@ -271,6 +323,7 @@ export default function JobResultPage() {
                   claims={group.claims}
                   focusedClaimId={focusedClaimId}
                   scrollTarget={scrollTarget}
+                  expandAllSignal={expandAllCounter}
                   onHover={setFocusedClaimId}
                   onClick={handleClaimClick}
                 />

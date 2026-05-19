@@ -36,6 +36,8 @@ interface ClaimGroupProps {
   focusedClaimId: string | null;
   /** 클릭으로만 발동되는 스크롤/펼침 신호. id가 매칭되면 그룹 자동 펼침 */
   scrollTarget?: { id: string; ts: number } | null;
+  /** "전체 펼치기" 카운터 — 값이 변하면 모든 그룹이 펼쳐짐 (PDF 인쇄 등) */
+  expandAllSignal?: number;
   onHover: (id: string | null) => void;
   onClick: (id: string) => void;
 }
@@ -45,6 +47,7 @@ export function ClaimGroup({
   claims,
   focusedClaimId,
   scrollTarget,
+  expandAllSignal,
   onHover,
   onClick,
 }: ClaimGroupProps) {
@@ -60,6 +63,11 @@ export function ClaimGroup({
       setExpanded(true);
     }
   }, [scrollTarget, claims]);
+
+  // 전체 펼치기 신호 — PDF 인쇄/저장 시 사용
+  useEffect(() => {
+    if (expandAllSignal && expandAllSignal > 0) setExpanded(true);
+  }, [expandAllSignal]);
 
   // verdict 분포
   const dist = claims.reduce((acc, c) => {

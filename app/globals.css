@@ -137,4 +137,51 @@
 .dark .claim-highlight.mismatch    { background: rgba(248, 113, 113, 0.22); }
 .dark .claim-highlight.partial     { background: rgba(250, 204, 21, 0.22); }
 .dark .claim-highlight.unverifiable{ background: rgba(161, 161, 170, 0.18); }
+
+/* ─── 인쇄 / PDF 저장 ─────────────────────────────────── */
+@media print {
+  /* 인쇄 시엔 다크 모드 끄고 항상 흰 배경 */
+  :root, .dark {
+    color-scheme: light;
+    --background: 0 0% 100%;
+    --foreground: 40 9% 20%;
+    --card: 0 0% 100%;
+    --muted: 60 6% 95%;
+    --border: 60 5% 85%;
+  }
+
+  /* 사이드바·플로팅 UI·다운로드 버튼은 인쇄에 안 들어감 */
+  aside,
+  [data-no-print],
+  .no-print {
+    display: none !important;
+  }
+
+  /* 본문 폭/패딩 인쇄용으로 정리 */
+  main {
+    overflow: visible !important;
+    height: auto !important;
+  }
+  body, html {
+    background: white !important;
+  }
+
+  /* 카드 색감 깔끔하게 */
+  .claim-highlight {
+    background: transparent !important;
+    border-bottom: 1.5px solid currentColor;
+    padding: 0 !important;
+  }
+  .claim-highlight.match       { color: hsl(168 78% 28%); }
+  .claim-highlight.mismatch    { color: hsl(0 72% 45%); }
+  .claim-highlight.partial     { color: hsl(40 75% 38%); }
+  .claim-highlight.unverifiable{ color: hsl(40 4% 40%); }
+
+  /* 페이지 분리 — 카드가 페이지 경계에서 잘리지 않게 */
+  .claim-group-card,
+  [data-claim-card] {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
 .pdf-highlight.focused     { outline: 2px solid currentColor; opacity: 0.9; }
