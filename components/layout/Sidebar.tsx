@@ -8,6 +8,7 @@ import { useState } from "react";
 import {
   LayoutDashboard,
   FileSearch,
+  History,
   Database,
   KeyRound,
   BookOpen,
@@ -19,9 +20,12 @@ import { useAuth } from "@/lib/useAuth";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
+// exact: true면 pathname === href일 때만 active (하위 path 무시).
+// "검증 시작"이 검증 히스토리/결과 페이지에서 같이 active되는 걸 방지.
 const navItems = [
   { href: "/dashboard", label: "대시보드", icon: LayoutDashboard },
-  { href: "/verify", label: "검증 시작", icon: FileSearch },
+  { href: "/verify", label: "검증 시작", icon: FileSearch, exact: true },
+  { href: "/verify/jobs", label: "검증 히스토리", icon: History },
   { href: "/datasources", label: "데이터 소스", icon: Database },
   { href: "/settings/api-keys", label: "API 키", icon: KeyRound },
   { href: "/docs", label: "API 문서", icon: BookOpen },
@@ -48,8 +52,9 @@ export function Sidebar() {
       <nav className="flex-1 px-2 pb-2 space-y-0.5">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const active =
-            pathname === item.href || pathname.startsWith(item.href + "/");
+          const active = item.exact
+            ? pathname === item.href
+            : pathname === item.href || pathname.startsWith(item.href + "/");
           return (
             <Link
               key={item.href}
