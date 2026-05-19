@@ -68,74 +68,223 @@ function verdictsInGroup(claims: ClaimResult[]): Verdict[] {
 
 // ── 매칭 알고리즘 ────────────────────────────────────────
 
-function addCommas(s: string): string {
-  return s.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
- * 한 claim의 schema.value를 source에서 찾기 위한 후보 문자열들 생성.
- * 우선순위 순서대로 시도:
- *   1. "6.7%" — value + unit (가장 정확)
- *   2. "20,171" / "20171" — 큰 수는 콤마 변형도 시도
- *   3. "6.7"   — value만 (unit이 없는 경우 / 본문이 unit 다음에 적어둔 경우)
+ * 흔히 쓰이는 한국어 단위 변형 — schema.unit이 영문/기호일 때 본문이 한국어로
+ * 표기되는 케이스를 잡기 위함.
  */
-function buildSearchCandidates(claim: ClaimResult): string[] {
-  const v = claim.schema?.value;
-  if (v === undefined || v === null) return [];
-  const unit = claim.schema?.unit ?? "";
-  const vs = String(v);
-  const candidates: string[] = [];
+const UNIT_ALIASES: Record<string, string[]> = {
+  "%": ["%", "퍼센트"],
+  "%포인트": ["%포인트", "%p", "%P", "퍼센트포인트", "퍼센트 포인트", "%P"],
+  "%p": ["%p", "%P", "%포인트", "퍼센트포인트"],
+  "명": ["명", "인", "사람"],
+  "건": ["건"],
+  "원": ["원"],
+  "달러": ["달러", "$"],
+  "kg": ["kg", "킬로그램"],
+  "km": ["km", "킬로미터"],
+};
 
-  // 정수 + 천 단위 이상이면 콤마 변형도 시도
-  const isLargeInt = /^\d{4,}$/.test(vs);
-  const commaed = isLargeInt ? addCommas(vs) : null;
+function buildUnitRegex(unit: string): string {
+  if (!unit) return "";
+  const aliases = UNIT_ALIASES[unit] ?? [unit];
+  const escaped = aliases.map((a) => escapeRegex(a));
+  // 공백 옵션 + 단위 옵션 (단위가 없어도 매칭 가능하게)
+  return `(?:\\s*(?:${escaped.join("|")}))?`;
+}
 
-  if (unit) {
-    candidates.push(vs + unit);
-    if (commaed) candidates.push(commaed + unit);
-    candidates.push(vs + " " + unit); // 공백 포함 변형
+/**
+ * 한국어 큰 수 단위 표기로 변환.
+ * 예: 18921 → "1만 8921", 1234567890 → "12억 3456만 7890", 100000000 → "1억"
+ * 10000 미만이거나 소수면 null (변환 불필요).
+ */
+function toKoreanLargeNumber(n: number): string | null {
+  if (!Number.isInteger(n) || n < 10000) return null;
+  const units: Array<{ value: number; label: string }> = [
+    { value: 1_0000_0000_0000, label: "조" },
+    { value: 1_0000_0000, label: "억" },
+    { value: 1_0000, label: "만" },
+  ];
+  const parts: string[] = [];
+  let remaining = n;
+  for (const u of units) {
+    if (remaining >= u.value) {
+      const count = Math.floor(remaining / u.value);
+      parts.push(`${count}${u.label}`);
+      remaining = remaining % u.value;
+    }
   }
-  if (commaed) candidates.push(commaed);
-  candidates.push(vs);
-  return candidates;
+  if (remaining > 0) parts.push(String(remaining));
+  return parts.join(" ");
+}
+
+/**
+ * value를 source에서 찾을 정규식 패턴 빌드.
+ * 한 번에 다양한 표기 변형을 모두 커버:
+ *   - 음수 부호 (`-?`)
+ *   - 천 단위 콤마 옵션 (큰 수)
+ *   - trailing zero 허용 (2.3 ↔ 2.30 ↔ 2.300)
+ *   - 정수에 .0+ 옵션 (5 ↔ 5.0)
+ *   - 한국어 큰 수 표기 (18921 ↔ "1만 8921")
+ *   - 단위 한국어 변형 (% ↔ 퍼센트)
+ *   - 단위 앞 공백 옵션
+ */
+function buildValuePattern(value: number, unit: string): string | null {
+  const absV = Math.abs(value);
+  if (!Number.isFinite(absV)) return null;
+
+  const valueStr = String(absV);
+  const [intPart, decPart = ""] = valueStr.split(".");
+
+  // 정수부 — 매 3자리마다 콤마 옵션
+  let intRegex = "";
+  if (intPart.length <= 3) {
+    intRegex = intPart;
+  } else {
+    const chars: string[] = [];
+    for (let i = 0; i < intPart.length; i++) {
+      chars.push(intPart[i]);
+      const remaining = intPart.length - i - 1;
+      if (remaining > 0 && remaining % 3 === 0) {
+        chars.push(",?");
+      }
+    }
+    intRegex = chars.join("");
+  }
+
+  // 소수부 — trailing zero 허용
+  const decRegex = decPart
+    ? `\\.${decPart}0*`
+    : `(?:\\.0+)?`; // 정수인데 본문엔 ".00" 추가될 수도
+  const numericForm = intRegex + decRegex;
+
+  // 한국어 큰 수 표기 변형 (예: 18921 → "1만 8921")
+  // 단위 사이 공백을 \s* 로 유연하게 처리
+  const alternatives: string[] = [numericForm];
+  const korean = toKoreanLargeNumber(absV);
+  if (korean) {
+    const flexibleKorean = korean
+      .split(" ")
+      .map(escapeRegex)
+      .join("\\s*");
+    alternatives.push(flexibleKorean);
+  }
+  const valuePart =
+    alternatives.length > 1
+      ? `(?:${alternatives.join("|")})`
+      : alternatives[0];
+
+  // 부호 — 음수 부호 옵션
+  const signRegex = "-?";
+
+  // 단위
+  const unitRegex = buildUnitRegex(unit);
+
+  return signRegex + valuePart + unitRegex;
 }
 
 interface ValueMatch {
   start: number;
   end: number;
-  /** 이 위치를 가리키는 claim들 (중복 가능 — 같은 수치를 여러 검증이 사용) */
   claims: ClaimResult[];
 }
 
-/** source에서 모든 claim의 value 위치 찾기 */
-function findValueMatches(source: string, claims: ClaimResult[]): ValueMatch[] {
+/**
+ * claim_text(문장)를 source에서 찾는 공백 유연 정규식.
+ * 원문은 줄바꿈/탭이 있고 claim_text는 공백 1칸인 경우가 많아서
+ * `\s+` 변환으로 처리.
+ */
+function buildFlexibleSentencePattern(sentence: string): RegExp {
+  const PLACEHOLDER = "\x00WS\x00";
+  const withMarker = sentence.replace(/\s+/g, PLACEHOLDER);
+  const escaped = withMarker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = escaped.split(PLACEHOLDER).join("\\s+");
+  return new RegExp(pattern);
+}
+
+/**
+ * source에서 group(문장) 범위를 먼저 찾아서, 그 안에서만 각 claim의 value를 매칭.
+ *
+ * 이렇게 하면 같은 수치(예: "8.7%")가 source의 여러 문장에 등장해도
+ * 각 그룹이 자기 문장 안에서 매칭하므로 위치가 겹치지 않음.
+ */
+function findValueMatches(source: string, groups: Group[]): ValueMatch[] {
   const matches: ValueMatch[] = [];
 
-  for (const claim of claims) {
-    const candidates = buildSearchCandidates(claim);
-    let found: { start: number; end: number } | null = null;
+  // 1단계: 각 group의 sentence 범위 찾기 + claim별 value 매칭
+  for (const group of groups) {
+    if (group.claims.length === 0) continue;
 
-    for (const cand of candidates) {
-      const idx = source.indexOf(cand);
-      if (idx !== -1) {
-        found = { start: idx, end: idx + cand.length };
-        break;
+    // 그룹 문장 범위
+    let sentRange: { start: number; end: number } | null = null;
+    if (group.sentence) {
+      try {
+        const re = buildFlexibleSentencePattern(group.sentence);
+        const m = source.match(re);
+        if (m && m.index !== undefined) {
+          sentRange = { start: m.index, end: m.index + m[0].length };
+        }
+      } catch {
+        // 정규식 실패 — sentRange 없이 fallback
       }
     }
-    if (!found) continue;
 
-    // 같은 위치에 이미 매칭된 match가 있으면 claim만 추가, 없으면 새로
-    const existing = matches.find(
-      (m) => m.start === found!.start && m.end === found!.end
-    );
-    if (existing) {
-      existing.claims.push(claim);
-    } else {
-      matches.push({ ...found, claims: [claim] });
+    for (const claim of group.claims) {
+      const rawValue = claim.schema?.value;
+      if (rawValue === undefined || rawValue === null || rawValue === "")
+        continue;
+      const numV =
+        typeof rawValue === "number" ? rawValue : parseFloat(String(rawValue));
+      if (!Number.isFinite(numV)) continue;
+
+      const unit = claim.schema?.unit ?? "";
+      const pattern = buildValuePattern(numV, unit);
+      if (!pattern) continue;
+
+      // 그룹 sentence 범위 안에서 먼저 시도, 실패 시 전체 source fallback
+      const candidates: Array<{ scope: string; offset: number }> = [];
+      if (sentRange) {
+        candidates.push({
+          scope: source.slice(sentRange.start, sentRange.end),
+          offset: sentRange.start,
+        });
+      }
+      candidates.push({ scope: source, offset: 0 });
+
+      let found: { start: number; end: number } | null = null;
+      for (const { scope, offset } of candidates) {
+        try {
+          const re = new RegExp(pattern);
+          const m = scope.match(re);
+          if (m && m.index !== undefined && m[0].length > 0) {
+            found = {
+              start: m.index + offset,
+              end: m.index + offset + m[0].length,
+            };
+            break;
+          }
+        } catch {
+          // skip
+        }
+      }
+      if (!found) continue;
+
+      // 같은 위치에 이미 매칭된 게 있으면 claim만 추가
+      const existing = matches.find(
+        (m) => m.start === found!.start && m.end === found!.end
+      );
+      if (existing) {
+        existing.claims.push(claim);
+      } else {
+        matches.push({ ...found, claims: [claim] });
+      }
     }
   }
 
-  // 시작 위치 기준 정렬 + 중첩 제거 (먼저 시작한 것 우선)
+  // 시작 위치 기준 정렬 + 중첩 제거
   matches.sort((a, b) => a.start - b.start);
   const nonOverlap: ValueMatch[] = [];
   let cursor = 0;
@@ -170,9 +319,8 @@ export function HighlightedSource({
   onHover,
   onClick,
 }: HighlightedSourceProps) {
-  // 모든 claim flatten
-  const allClaims = groups.flatMap((g) => g.claims);
-  const matches = findValueMatches(source, allClaims);
+  // 각 그룹의 sentence 범위 안에서만 value 매칭 → 같은 수치 중복 문제 회피
+  const matches = findValueMatches(source, groups);
 
   // 원문을 텍스트 / 하이라이트 조각으로 잘라서 렌더
   const parts: React.ReactNode[] = [];
