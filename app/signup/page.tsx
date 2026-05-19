@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Languages } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,8 +12,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { signup, setAuthToken } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-/** 한글(자모/완성형) 즉시 제거 — 이메일/비밀번호용 */
-const stripKorean = (s: string) => s.replace(/[ㄱ-ㅎㅏ-ㅣ가-힣]/g, "");
+/** 한글(자모/완성형) 제거 + 한글이 있었는지 플래그 함께 반환 */
+function stripKoreanWithFlag(s: string): { value: string; hadHangul: boolean } {
+  const cleaned = s.replace(/[ㄱ-ㅎㅏ-ㅣ가-힣]/g, "");
+  return { value: cleaned, hadHangul: cleaned !== s };
+}
 
 export default function SignupPage() {
   const router = useRouter();
@@ -27,6 +31,24 @@ export default function SignupPage() {
   const passwordsTouched = password.length > 0 && passwordConfirm.length > 0;
   const passwordsMatch = password === passwordConfirm;
   const showMismatch = passwordsTouched && !passwordsMatch;
+
+  // 한글 차단 안내 — input 별로 2.5초만 표시 후 자동 dismiss
+  const [emailHangulWarn, setEmailHangulWarn] = useState(false);
+  const [pwHangulWarn, setPwHangulWarn] = useState(false);
+  const [pwConfirmHangulWarn, setPwConfirmHangulWarn] = useState(false);
+
+  function handleEnglishOnly(
+    raw: string,
+    setValue: (v: string) => void,
+    setWarn: (v: boolean) => void
+  ) {
+    const { value, hadHangul } = stripKoreanWithFlag(raw);
+    setValue(value);
+    if (hadHangul) {
+      setWarn(true);
+      setTimeout(() => setWarn(false), 2500);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -72,14 +94,26 @@ export default function SignupPage() {
                 type="email"
                 required
                 value={email}
-                onChange={(e) => setEmail(stripKorean(e.target.value))}
+                onChange={(e) =>
+                  handleEnglishOnly(e.target.value, setEmail, setEmailHangulWarn)
+                }
                 placeholder="you@example.com"
                 lang="en"
                 inputMode="email"
                 autoComplete="email"
                 autoCapitalize="off"
                 spellCheck={false}
+                aria-invalid={emailHangulWarn}
+                className={cn(
+                  emailHangulWarn && "border-destructive focus-visible:ring-destructive/40"
+                )}
               />
+              {emailHangulWarn && (
+                <p className="text-xs text-destructive flex items-center gap-1 animate-in fade-in-0 slide-in-from-top-0.5">
+                  <Languages className="h-3 w-3" />
+                  이메일은 영문으로 입력해 주세요
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">비밀번호</Label>
@@ -89,13 +123,25 @@ export default function SignupPage() {
                 required
                 minLength={8}
                 value={password}
-                onChange={(e) => setPassword(stripKorean(e.target.value))}
+                onChange={(e) =>
+                  handleEnglishOnly(e.target.value, setPassword, setPwHangulWarn)
+                }
                 placeholder="8자 이상"
                 lang="en"
                 autoComplete="new-password"
                 autoCapitalize="off"
                 spellCheck={false}
+                aria-invalid={pwHangulWarn}
+                className={cn(
+                  pwHangulWarn && "border-destructive focus-visible:ring-destructive/40"
+                )}
               />
+              {pwHangulWarn && (
+                <p className="text-xs text-destructive flex items-center gap-1 animate-in fade-in-0 slide-in-from-top-0.5">
+                  <Languages className="h-3 w-3" />
+                  비밀번호는 영문으로 입력해 주세요
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="password-confirm">비밀번호 재확인</Label>
@@ -106,30 +152,48 @@ export default function SignupPage() {
                 minLength={8}
                 value={passwordConfirm}
                 onChange={(e) =>
-                  setPasswordConfirm(stripKorean(e.target.value))
+                  handleEnglishOnly(
+                    e.target.value,
+                    setPasswordConfirm,
+                    setPwConfirmHangulWarn
+                  )
                 }
                 placeholder="비밀번호 한 번 더 입력"
                 lang="en"
                 autoComplete="new-password"
                 autoCapitalize="off"
                 spellCheck={false}
-                aria-invalid={showMismatch}
+                aria-invalid={showMismatch || pwConfirmHangulWarn}
                 className={cn(
-                  showMismatch && "border-destructive focus-visible:ring-destructive/40"
+                  (showMismatch || pwConfirmHangulWarn) &&
+                    "border-destructive focus-visible:ring-destructive/40"
                 )}
               />
-              {showMismatch && (
+              {pwConfirmHangulWarn && (
+                <p className="text-xs text-destructive flex items-center gap-1 animate-in fade-in-0 slide-in-from-top-0.5">
+                  <Languages className="h-3 w-3" />
+                  비밀번호는 영문으로 입력해 주세요
+                </p>
+              )}
+              {!pwConfirmHangulWarn && showMismatch && (
                 <p className="text-xs text-destructive">
                   비밀번호가 일치하지 않습니다.
                 </p>
               )}
-              {passwordsTouched && passwordsMatch && (
+              {!pwConfirmHangulWarn && passwordsTouched && passwordsMatch && (
                 <p className="text-xs text-verdict-match">
                   비밀번호가 일치합니다.
                 </p>
               )}
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
+
+            {/* 정적 안내 — 계정 만들기 버튼 직전에 마지막 확인용으로 */}
+            <div className="rounded-md bg-muted/40 px-3 py-2 text-[11.5px] text-muted-foreground flex items-center gap-2">
+              <Languages className="h-3.5 w-3.5 shrink-0" />
+              이메일과 비밀번호는 영문/숫자/기호로만 입력 가능해요
+            </div>
+
             <Button
               type="submit"
               className="w-full"
