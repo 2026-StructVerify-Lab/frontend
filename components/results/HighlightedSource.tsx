@@ -64,6 +64,25 @@ interface HighlightedSourceProps {
   onClick: (sentId: string) => void;
 }
 
+/**
+ * claim_text를 source에서 찾을 정규식 빌더.
+ *
+ * 문제: 원문은 줄바꿈(\n)이 있고 claim_text는 공백 1칸으로 합쳐져 오는 경우가 많음.
+ *      `indexOf`만으로는 매칭 실패.
+ *
+ * 해결: 문장의 모든 공백류를 `\s+`로 치환한 정규식으로 매칭. 줄바꿈/탭/연속 공백
+ *      모두 허용. 정규식 메타문자는 안전하게 escape.
+ */
+function buildFlexiblePattern(sentence: string): RegExp {
+  const PLACEHOLDER = "\x00WS\x00";
+  const withMarker = sentence.replace(/\s+/g, PLACEHOLDER);
+  // 정규식 특수문자 escape
+  const escaped = withMarker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // marker → \s+
+  const pattern = escaped.split(PLACEHOLDER).join("\\s+");
+  return new RegExp(pattern);
+}
+
 export function HighlightedSource({
   source,
   groups,
@@ -71,7 +90,7 @@ export function HighlightedSource({
   onHover,
   onClick,
 }: HighlightedSourceProps) {
-  // 원문에서 각 그룹 문장의 위치 찾기
+  // 원문에서 각 그룹 문장의 위치 찾기 — 공백 차이 허용 정규식 매칭
   const matches: Array<{
     start: number;
     end: number;
@@ -80,17 +99,34 @@ export function HighlightedSource({
 
   for (const group of groups) {
     if (!group.sentence) continue;
-    // 정확 일치 우선 시도
+
+    // 1순위: 공백 유연 정규식 매칭 (줄바꿈/탭/연속 공백 OK)
+    try {
+      const re = buildFlexiblePattern(group.sentence);
+      const m = source.match(re);
+      if (m && m.index !== undefined) {
+        matches.push({
+          start: m.index,
+          end: m.index + m[0].length,
+          group,
+        });
+        continue;
+      }
+    } catch {
+      // 정규식 빌드 실패는 무시하고 fallback으로
+    }
+
+    // 2순위: 정확 일치
     let idx = source.indexOf(group.sentence);
     if (idx === -1) {
-      // 공백 차이 등으로 안 맞을 수 있으니, 첫 20자로 fuzzy 시도
-      const head = group.sentence.slice(0, 20);
-      idx = source.indexOf(head);
+      // 3순위: 첫 20자 head 매칭 (그래도 안 잡히는 케이스 대비)
+      const head = group.sentence.slice(0, 20).replace(/\s+/g, " ").trim();
+      if (head) idx = source.indexOf(head);
     }
     if (idx !== -1) {
       matches.push({
         start: idx,
-        end: idx + group.sentence.length,
+        end: Math.min(idx + group.sentence.length, source.length),
         group,
       });
     }
