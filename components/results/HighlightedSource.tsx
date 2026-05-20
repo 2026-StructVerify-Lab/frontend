@@ -234,8 +234,10 @@ function findValueMatches(source: string, groups: Group[]): ValueMatch[] {
 
     for (const claim of group.claims) {
       const rawValue = claim.schema?.value;
+
       if (rawValue === undefined || rawValue === null)
         continue;
+
       const numV =
         typeof rawValue === "number" ? rawValue : parseFloat(String(rawValue));
       if (!Number.isFinite(numV)) continue;
