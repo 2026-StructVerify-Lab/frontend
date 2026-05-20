@@ -234,9 +234,10 @@ function findValueMatches(source: string, groups: Group[]): ValueMatch[] {
 
     for (const claim of group.claims) {
       const rawValue = claim.schema?.value;
-      // ClaimSchema.value 타입은 `number | null` — null/undefined만 체크하면 충분
-      if (rawValue === undefined || rawValue === null) continue;
-      // 혹시 백엔드가 string으로 보낼 가능성 대비해 numeric으로 정규화
+
+      if (rawValue === undefined || rawValue === null)
+        continue;
+
       const numV =
         typeof rawValue === "number" ? rawValue : parseFloat(String(rawValue));
       if (!Number.isFinite(numV)) continue;
