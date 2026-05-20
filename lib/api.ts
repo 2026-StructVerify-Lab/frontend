@@ -207,6 +207,24 @@ export async function listJobs(limit = 20, offset = 0): Promise<Job[]> {
 }
 
 /**
+ * 진행 중인 job을 중단. (백엔드 endpoint: POST /v1/jobs/{id}/cancel)
+ * 백엔드 미구현 시엔 mock으로 failed 상태 반환.
+ */
+export async function cancelJob(jobId: string): Promise<Job> {
+  if (USE_MOCK) {
+    await sleep(200);
+    return {
+      ...mockJob,
+      id: jobId,
+      status: "failed",
+      error: "사용자가 검증을 중단했습니다.",
+      completed_at: new Date().toISOString(),
+    };
+  }
+  return apiFetch(`/v1/jobs/${jobId}/cancel`, { method: "POST" });
+}
+
+/**
  * Job 완료까지 polling. UI에서 사용:
  *
  *   const job = await pollJob(jobId, (j) => setJob(j));

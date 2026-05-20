@@ -22,6 +22,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { submitVerify } from "@/lib/api";
 import { useJobWatcher } from "@/lib/jobWatcher";
 import type { SourceType } from "@/lib/types";
@@ -37,6 +38,7 @@ export default function VerifyPage() {
   const [useKosis, setUseKosis] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   async function handleSubmit() {
     setSubmitting(true);
@@ -242,12 +244,29 @@ export default function VerifyPage() {
             <Button
               size="lg"
               disabled={!canSubmit || submitting}
-              onClick={handleSubmit}
+              onClick={() => setConfirmOpen(true)}
             >
               {submitting ? "제출 중…" : "검증 시작"}
             </Button>
           )}
         </div>
+
+        {/* 검증 시작 전 확인 다이얼로그 — 실수로 제출하는 것 방지 */}
+        <ConfirmDialog
+          open={confirmOpen}
+          onOpenChange={setConfirmOpen}
+          title="이 내용으로 검증을 시작하시겠습니까?"
+          description={
+            activeTab === "text"
+              ? `텍스트 ${text.length.toLocaleString()}자를 검증합니다. 시작 후에는 결과 페이지에서 중단할 수 있어요.`
+              : activeTab === "url"
+              ? "URL의 본문을 가져와 검증합니다. 시작 후에는 결과 페이지에서 중단할 수 있어요."
+              : `${file?.name ?? "파일"}을 검증합니다. 시작 후에는 결과 페이지에서 중단할 수 있어요.`
+          }
+          confirmText="검증 시작"
+          cancelText="취소"
+          onConfirm={handleSubmit}
+        />
       </div>
     </AppShell>
   );

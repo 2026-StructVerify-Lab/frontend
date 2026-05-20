@@ -13,9 +13,9 @@
 // 폴링: status가 pending/running이면 2초마다 GET.
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { FileText, Printer } from "lucide-react";
+import { FileText, Printer, Square } from "lucide-react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/layout/AppShell";
@@ -24,9 +24,11 @@ import { HighlightedSource } from "@/components/results/HighlightedSource";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Separator } from "@/components/ui/separator";
-import { getJob } from "@/lib/api";
+import { cancelJob, getJob } from "@/lib/api";
 import { downloadJobAsTxt, printAsPdf } from "@/lib/exporters";
+import { useJobWatcher } from "@/lib/jobWatcher";
 import type { ClaimResult, Job } from "@/lib/types";
 
 // PDFViewer는 SSR 비활성 (react-pdf가 브라우저 전용)
@@ -38,10 +40,16 @@ const PDFViewer = dynamic(
 export default function JobResultPage() {
   const params = useParams<{ id: string }>();
   const jobId = params.id;
+  const router = useRouter();
+  const { unwatch } = useJobWatcher();
 
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [focusedClaimId, setFocusedClaimId] = useState<string | null>(null);
+
+  // 검증 중지 확인 다이얼로그
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   // 클릭으로만 발동되는 펼침/스크롤 신호 (hover와 분리)
   // ts를 같이 보내서 같은 id를 다시 클릭해도 effect가 재발동되게 함
   const [scrollTarget, setScrollTarget] = useState<{
@@ -112,6 +120,24 @@ export default function JobResultPage() {
     setTimeout(() => printAsPdf(), 250);
   }
 
+  // 검증 중단
+  async function handleCancelConfirmed() {
+    setCancelling(true);
+    try {
+      const updated = await cancelJob(jobId);
+      setJob(updated);
+      unwatch(jobId); // 글로벌 watcher에서도 제거
+      toast.success("검증이 중단되었습니다");
+    } catch (err) {
+      toast.error("검증 중단에 실패했습니다", {
+        description:
+          err instanceof Error ? err.message : "잠시 후 다시 시도해 주세요.",
+      });
+    } finally {
+      setCancelling(false);
+    }
+  }
+
   // 같은 문장(claim_text)을 가진 claim들을 한 그룹으로 묶기.
   // ⚠️ Hook은 early return보다 반드시 위에 있어야 함 (호출 순서 일관성).
   //    job이 아직 null일 때도 claims를 안전하게 가져오도록 옵셔널 체이닝.
@@ -160,11 +186,23 @@ export default function JobResultPage() {
     return (
       <AppShell>
         <div className="container max-w-2xl py-10 space-y-6">
-          <div className="space-y-1">
-            <h1 className="text-[28px] font-bold tracking-tight">검증 중</h1>
-            <p className="text-sm text-muted-foreground">
-              다른 페이지로 이동해도 진행 상황은 우측 하단에 계속 표시됩니다.
-            </p>
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <h1 className="text-[28px] font-bold tracking-tight">검증 중</h1>
+              <p className="text-sm text-muted-foreground">
+                다른 페이지로 이동해도 진행 상황은 우측 하단에 계속 표시됩니다.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCancelOpen(true)}
+              disabled={cancelling}
+              className="shrink-0"
+            >
+              <Square className="h-3.5 w-3.5 mr-1.5 fill-current" />
+              검증 중지
+            </Button>
           </div>
           <Card className="shadow-none">
             <CardContent className="p-6 space-y-5">
@@ -188,6 +226,18 @@ export default function JobResultPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* 검증 중지 확인 다이얼로그 */}
+        <ConfirmDialog
+          open={cancelOpen}
+          onOpenChange={setCancelOpen}
+          title="검증을 중지하시겠습니까?"
+          description="지금까지 처리된 결과는 폐기되며, 다시 시작하려면 처음부터 진행해야 합니다."
+          confirmText="검증 중지"
+          cancelText="계속 진행"
+          destructive
+          onConfirm={handleCancelConfirmed}
+        />
       </AppShell>
     );
   }
