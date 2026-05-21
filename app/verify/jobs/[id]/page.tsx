@@ -15,7 +15,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { FileText, Printer } from "lucide-react";
+import {
+  FileText,
+  Printer,
+  Loader2,
+  Search,
+  Compass,
+  Database,
+  Calculator,
+  Flag,
+  Circle,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/layout/AppShell";
@@ -25,9 +37,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 import { getJob } from "@/lib/api";
 import { downloadJobAsTxt, printAsPdf } from "@/lib/exporters";
-import type { ClaimResult, Job } from "@/lib/types";
+import type { ClaimResult, Job, TraceStep } from "@/lib/types";
 
 // PDFViewer는 SSR 비활성 (react-pdf가 브라우저 전용)
 const PDFViewer = dynamic(
@@ -157,9 +170,13 @@ export default function JobResultPage() {
 
   // 아직 처리 중
   if (job.status === "pending" || job.status === "running") {
+    // [실시간 노출] 백엔드가 status=running일 때도 workspace에서 읽은 partial
+    // claims를 result.claims에 채워 보냄. 있으면 progressively 렌더.
+    const liveClaims = job.result?.claims ?? [];
+
     return (
       <AppShell>
-        <div className="container max-w-2xl py-10 space-y-6">
+        <div className="container max-w-3xl py-10 space-y-6">
           <div className="space-y-1">
             <h1 className="text-[28px] font-bold tracking-tight">검증 중</h1>
             <p className="text-sm text-muted-foreground">
@@ -187,6 +204,29 @@ export default function JobResultPage() {
               <ProgressSteps currentProgress={job.progress} />
             </CardContent>
           </Card>
+
+          {/* [실시간] 지금까지 만들어진 claim + plan/trace */}
+          {liveClaims.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-baseline gap-2">
+                <h2 className="text-[15px] font-semibold">
+                  지금까지 발견된 주장
+                </h2>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {liveClaims.length}개
+                </span>
+              </div>
+              <div className="space-y-2.5">
+                {liveClaims.map((c, idx) => (
+                  <LiveClaimCard
+                    key={c.claim_id ?? c.sent_id ?? idx}
+                    claim={c}
+                    index={idx + 1}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </AppShell>
     );
@@ -390,5 +430,216 @@ function ProgressSteps({ currentProgress }: { currentProgress: number }) {
         );
       })}
     </div>
+  );
+}
+
+// ── 실시간 partial claim 카드 ────────────────────────────────────
+// status=pending/running 중에 백엔드 workspace에서 읽은 partial 데이터를
+// progressively 렌더. verdict 아직 없을 수 있고 trace는 자라는 중.
+
+// action별 아이콘·라벨·색상 (ClaimCard와 동일 매핑 — 단일 진실원천 만들 때
+// 공통 모듈로 추출 권장)
+const LIVE_ACTION_META: Record<
+  string,
+  { icon: typeof Circle; label: string; tone: string }
+> = {
+  explore_catalog: {
+    icon: Compass,
+    label: "카탈로그 탐색",
+    tone: "text-purple-600 dark:text-purple-400",
+  },
+  catalog_search: {
+    icon: Search,
+    label: "표 검색",
+    tone: "text-blue-600 dark:text-blue-400",
+  },
+  fetch_evidence: {
+    icon: Database,
+    label: "데이터 조회",
+    tone: "text-emerald-600 dark:text-emerald-400",
+  },
+  calculate: {
+    icon: Calculator,
+    label: "계산",
+    tone: "text-amber-600 dark:text-amber-400",
+  },
+  finish: {
+    icon: Flag,
+    label: "검증 종료",
+    tone: "text-rose-600 dark:text-rose-400",
+  },
+};
+
+function liveActionMeta(action: string) {
+  return (
+    LIVE_ACTION_META[action] ?? {
+      icon: Circle,
+      label: action,
+      tone: "text-muted-foreground",
+    }
+  );
+}
+
+function LiveClaimCard({
+  claim,
+  index,
+}: {
+  claim: ClaimResult;
+  index: number;
+}) {
+  const [open, setOpen] = useState(false);
+  // verdict가 있으면 완료된 claim, 없으면 진행 중
+  const hasVerdict = !!claim.verdict;
+  const trace = claim.trace ?? [];
+  const lastTrace = trace[trace.length - 1];
+  const lastAction = lastTrace?.action;
+  const meta = lastAction ? liveActionMeta(lastAction) : null;
+  const Icon = meta?.icon ?? Loader2;
+
+  return (
+    <Card
+      className={cn(
+        "border-l-4 shadow-none transition-all",
+        hasVerdict
+          ? "border-l-foreground/30"
+          : "border-l-foreground/60 animate-pulse-slow"
+      )}
+    >
+      <CardContent className="p-3 space-y-2">
+        {/* 헤더 — claim 텍스트 + 진행 상태 한 줄 */}
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="w-full text-left flex items-start gap-2"
+        >
+          <span className="text-[10px] tabular-nums text-muted-foreground w-5 shrink-0 pt-1">
+            #{index}
+          </span>
+          <div className="flex-1 min-w-0 space-y-1">
+            <p className="text-[12.5px] leading-snug line-clamp-2 text-foreground/85">
+              {claim.claim_text || "(주장 텍스트 로딩 중)"}
+            </p>
+            <div className="flex items-center gap-1.5 text-[10.5px]">
+              {meta ? (
+                <>
+                  <Icon className={cn("h-3 w-3", meta.tone)} />
+                  <span className={meta.tone}>{meta.label}</span>
+                  <span className="text-muted-foreground">
+                    · iter {lastTrace.iter}
+                  </span>
+                </>
+              ) : claim.plan ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                  <span className="text-muted-foreground">계획 수립 완료</span>
+                </>
+              ) : (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                  <span className="text-muted-foreground">대기 중…</span>
+                </>
+              )}
+              {hasVerdict && (
+                <Badge variant={claim.verdict as any} className="h-4 text-[9px]">
+                  {claim.verdict}
+                </Badge>
+              )}
+            </div>
+          </div>
+          {open ? (
+            <ChevronUp className="h-3.5 w-3.5 mt-1 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5 mt-1 shrink-0 text-muted-foreground" />
+          )}
+        </button>
+
+        {/* 펼쳤을 때 — plan 요약 + trace 라인 */}
+        {open && (
+          <div className="pl-7 space-y-2 text-[11px] border-t pt-2">
+            {/* schema (있을 때) */}
+            {claim.schema && (
+              <div className="space-y-0.5 text-muted-foreground">
+                <div>
+                  지표: <span className="text-foreground/85 font-medium">
+                    {claim.schema.indicator}
+                  </span>{" "}
+                  {claim.schema.value !== null && claim.schema.value !== undefined && (
+                    <>
+                      = <span className="font-mono text-foreground/85">
+                        {String(claim.schema.value)}
+                        {claim.schema.unit ?? ""}
+                      </span>{" "}
+                    </>
+                  )}
+                  {claim.schema.time_period && (
+                    <span className="text-muted-foreground">
+                      ({claim.schema.time_period})
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* plan summary (있을 때) */}
+            {claim.plan && (
+              <div className="space-y-0.5">
+                <div className="text-muted-foreground">계획</div>
+                <div className="ml-2 font-mono text-[10.5px] text-foreground/75">
+                  {claim.plan.claim_type ?? "—"}
+                  {claim.plan.calculation_formula && (
+                    <span> · {claim.plan.calculation_formula}</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* trace 진행 — 압축 라인 (펼쳐도 카드 크기 적당히) */}
+            {trace.length > 0 && (
+              <div className="space-y-0.5">
+                <div className="text-muted-foreground">
+                  진행 ({trace.length}/{claim.plan?.initial_steps?.length ?? "?"} step)
+                </div>
+                <ol className="ml-2 space-y-0.5">
+                  {trace.map((t) => (
+                    <LiveTraceLine key={t.iter} step={t} />
+                  ))}
+                </ol>
+              </div>
+            )}
+
+            {/* explanation (verdict 났을 때) */}
+            {claim.explanation && (
+              <div className="bg-muted/40 rounded p-2 mt-1">
+                <p className="text-[10.5px] leading-snug text-foreground/75 whitespace-pre-wrap line-clamp-4">
+                  {claim.explanation}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function LiveTraceLine({ step }: { step: TraceStep }) {
+  const m = liveActionMeta(step.action);
+  const Icon = m.icon;
+  return (
+    <li className="flex items-start gap-1.5 text-[10.5px]">
+      <span className="tabular-nums text-muted-foreground w-4 shrink-0 pt-0.5">
+        {step.iter}
+      </span>
+      <Icon className={cn("h-3 w-3 mt-0.5 shrink-0", m.tone)} />
+      <span
+        className={cn(
+          "flex-1 truncate",
+          step.success ? "text-foreground/75" : "text-rose-600 dark:text-rose-400"
+        )}
+        title={step.summary ?? ""}
+      >
+        {step.summary ?? m.label}
+      </span>
+    </li>
   );
 }

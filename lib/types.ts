@@ -53,7 +53,70 @@ export interface GraphTemporal {
   via_coref?: string;
 }
 
+// ── Agent loop의 Plan + Trace (백엔드 A-1) ────────────────────────
+// 각 claim의 검증 계획(Planner LLM 결과)과 실행 trace(매 iter의 action·결과).
+// agent_workspace의 plan.json / observations/iter_NN_*.json 을 백엔드가 합쳐 보냄.
+
+export interface PlanRequiredData {
+  indicator: string | null;
+  time: string | null;
+  population: string | null;
+  unit_hint: string | null;
+}
+
+export interface PlanStep {
+  action: string;            // catalog_search / explore_catalog / fetch_evidence / calculate / finish / read_original
+  input: Record<string, unknown> | null;
+  rationale: string | null;
+}
+
+export interface ClaimPlan {
+  claim_type: string | null;          // absolute / growth_rate / comparison / difference / ranking
+  calculation_formula: string | null;
+  required_data: PlanRequiredData[];
+  initial_steps: PlanStep[];
+}
+
+export interface TraceCandidate {
+  id: string;
+  name: string;
+}
+
+export interface TraceCategory {
+  category_label: string;
+  table_count: number;
+}
+
+export interface TraceEvidence {
+  stat_table_id: string | null;
+  value: number | string | null;
+  unit: string | null;
+  time_period: string | null;
+}
+
+export interface TraceOutput {
+  candidates_top3?: TraceCandidate[];     // catalog_search 결과
+  categories_top3?: TraceCategory[];      // explore_catalog 결과
+  evidence?: TraceEvidence;               // fetch_evidence 결과
+  result?: number | string | null;        // calculate 결과
+  verdict?: string;                       // finish 결과
+  confidence?: number;
+}
+
+export interface TraceStep {
+  iter: number;
+  action: string;
+  rationale: string | null;
+  input: Record<string, unknown> | null;
+  summary: string | null;
+  success: boolean;
+  error: string | null;
+  output: TraceOutput | null;
+}
+
 export interface ClaimResult {
+  // 백엔드 식별자 — 실시간 partial 응답에서 들어옴, completed 결과에도 포함
+  claim_id?: string;
   sent_id: string;
   claim_text: string;
   verdict: Verdict;
@@ -64,6 +127,9 @@ export interface ClaimResult {
   computed_value?: number | null;
   formula?: string | null;
   explanation: string | null;
+  // Agent loop의 plan/trace — 검증 과정을 UI에 풍부하게 노출 (A-1)
+  plan?: ClaimPlan | null;
+  trace?: TraceStep[];
   // PDF에서 이 claim의 텍스트 위치 (있으면 하이라이트)
   pdf_locations?: Array<{
     page: number;

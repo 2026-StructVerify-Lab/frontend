@@ -13,13 +13,25 @@ import {
   ChevronDown,
   ChevronUp,
   ExternalLink,
+  Search,
+  Compass,
+  Database,
+  Calculator,
+  Flag,
+  FileText,
+  Circle,
 } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { ClaimResult, Verdict } from "@/lib/types";
+import type {
+  ClaimResult,
+  Verdict,
+  PlanStep,
+  TraceStep,
+} from "@/lib/types";
 
 const VERDICT_META: Record<
   Verdict,
@@ -225,6 +237,14 @@ export function ClaimCard({ claim, focused, onHover, onClick }: ClaimCardProps) 
               </DetailSection>
             )}
 
+            {/* [A-1] Agent loop의 검증 계획 (Planner LLM 결과) */}
+            {claim.plan && <PlanSection plan={claim.plan} />}
+
+            {/* [A-1] Agent loop의 실행 trace (iter별 action timeline) */}
+            {claim.trace && claim.trace.length > 0 && (
+              <TraceSection trace={claim.trace} />
+            )}
+
             {/* Explanation — 다른 섹션과 텍스트 톤 통일(xs) + 은은한 배경으로 LLM 자연어임을 시각적으로 분리 */}
             {claim.explanation && (
               <DetailSection title="AI 설명">
@@ -390,6 +410,287 @@ function DetailRow({
     >
       <span className="text-muted-foreground w-24 shrink-0">{label}</span>
       <span className={cn("flex-1", mono && "font-mono")}>{value}</span>
+    </div>
+  );
+}
+
+// ── [A-1] Plan / Trace 컴포넌트 ──────────────────────────────────
+// 백엔드가 agent_workspace에서 읽어 응답에 합쳐 보내는 plan + trace를
+// 펼친 상세 영역에 timeline 형식으로 표시.
+
+// action별 아이콘/색상 매핑. agent_loop가 호출하는 6가지 도구.
+const ACTION_META: Record<
+  string,
+  { icon: typeof Circle; label: string; tone: string }
+> = {
+  explore_catalog: {
+    icon: Compass,
+    label: "카탈로그 탐색",
+    tone: "text-purple-600 dark:text-purple-400",
+  },
+  catalog_search: {
+    icon: Search,
+    label: "표 검색",
+    tone: "text-blue-600 dark:text-blue-400",
+  },
+  fetch_evidence: {
+    icon: Database,
+    label: "데이터 조회",
+    tone: "text-emerald-600 dark:text-emerald-400",
+  },
+  calculate: {
+    icon: Calculator,
+    label: "계산",
+    tone: "text-amber-600 dark:text-amber-400",
+  },
+  read_original: {
+    icon: FileText,
+    label: "원문 읽기",
+    tone: "text-slate-600 dark:text-slate-400",
+  },
+  finish: {
+    icon: Flag,
+    label: "검증 종료",
+    tone: "text-rose-600 dark:text-rose-400",
+  },
+};
+
+function actionMeta(action: string) {
+  return (
+    ACTION_META[action] ?? {
+      icon: Circle,
+      label: action,
+      tone: "text-muted-foreground",
+    }
+  );
+}
+
+/** Plan 섹션 — Planner LLM이 짠 검증 계획 (claim_type / formula / 초기 step) */
+function PlanSection({ plan }: { plan: NonNullable<ClaimResult["plan"]> }) {
+  return (
+    <DetailSection title="검증 계획 (Plan)">
+      <div className="space-y-1.5">
+        {plan.claim_type && (
+          <DetailRow label="유형" value={plan.claim_type} mono />
+        )}
+        {plan.calculation_formula && (
+          <DetailRow
+            label="수식"
+            value={plan.calculation_formula}
+            mono
+            multiline
+          />
+        )}
+        {plan.required_data && plan.required_data.length > 0 && (
+          <div className="text-xs space-y-0.5 pt-1">
+            <span className="text-muted-foreground">필요한 데이터</span>
+            {plan.required_data.map((d, i) => (
+              <div
+                key={i}
+                className="ml-2 text-foreground/80 font-mono text-[11px]"
+              >
+                · {d.indicator ?? "—"}
+                {d.time && <> ({d.time})</>}
+                {d.population && <> · {d.population}</>}
+                {d.unit_hint && <> [{d.unit_hint}]</>}
+              </div>
+            ))}
+          </div>
+        )}
+        {plan.initial_steps && plan.initial_steps.length > 0 && (
+          <div className="text-xs pt-1 space-y-1">
+            <span className="text-muted-foreground">초기 step</span>
+            <ol className="ml-2 space-y-0.5">
+              {plan.initial_steps.map((s, i) => {
+                const m = actionMeta(s.action);
+                const Icon = m.icon;
+                return (
+                  <li
+                    key={i}
+                    className="flex items-start gap-1.5 text-[11px]"
+                  >
+                    <Icon className={cn("h-3 w-3 mt-0.5 shrink-0", m.tone)} />
+                    <span>
+                      <span className="font-mono">{s.action}</span>
+                      {s.rationale && (
+                        <span className="text-muted-foreground">
+                          {" "}
+                          — {s.rationale}
+                        </span>
+                      )}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        )}
+      </div>
+    </DetailSection>
+  );
+}
+
+/** Trace 섹션 — Agent loop의 iter별 action 타임라인.
+ *  각 step은 펼치면 input/output 상세까지. */
+function TraceSection({ trace }: { trace: TraceStep[] }) {
+  return (
+    <DetailSection title={`검증 과정 (${trace.length} step)`}>
+      <ol className="space-y-1.5">
+        {trace.map((step) => (
+          <TraceStepRow key={step.iter} step={step} />
+        ))}
+      </ol>
+    </DetailSection>
+  );
+}
+
+function TraceStepRow({ step }: { step: TraceStep }) {
+  const [open, setOpen] = useState(false);
+  const m = actionMeta(step.action);
+  const Icon = m.icon;
+  const hasDetails =
+    !!step.rationale ||
+    !!step.input ||
+    !!step.output ||
+    !!step.error;
+
+  return (
+    <li
+      className={cn(
+        "rounded-md border border-border/60 bg-muted/30 px-2.5 py-1.5",
+        !step.success && "border-rose-300/60 dark:border-rose-700/40"
+      )}
+    >
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (hasDetails) setOpen((v) => !v);
+        }}
+        className={cn(
+          "w-full flex items-start gap-2 text-left",
+          hasDetails && "cursor-pointer"
+        )}
+        disabled={!hasDetails}
+      >
+        <span className="text-[10px] tabular-nums text-muted-foreground w-5 shrink-0 pt-0.5">
+          #{step.iter}
+        </span>
+        <Icon className={cn("h-3.5 w-3.5 mt-0.5 shrink-0", m.tone)} />
+        <div className="flex-1 min-w-0 space-y-0.5">
+          <div className="flex items-baseline gap-2">
+            <span className="text-[11px] font-medium">{m.label}</span>
+            <span className="text-[10px] text-muted-foreground font-mono">
+              {step.action}
+            </span>
+            {!step.success && (
+              <Badge variant="mismatch" className="h-4 text-[9px]">
+                실패
+              </Badge>
+            )}
+          </div>
+          {step.summary && (
+            <p className="text-[11px] text-foreground/75 leading-snug line-clamp-2">
+              {step.summary}
+            </p>
+          )}
+        </div>
+        {hasDetails && (
+          <>
+            {open ? (
+              <ChevronUp className="h-3 w-3 mt-1 shrink-0 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="h-3 w-3 mt-1 shrink-0 text-muted-foreground" />
+            )}
+          </>
+        )}
+      </button>
+
+      {open && (
+        <div className="mt-2 pl-7 space-y-1.5 text-[10.5px] border-t border-border/40 pt-1.5">
+          {step.rationale && (
+            <div>
+              <span className="text-muted-foreground">이유: </span>
+              <span className="text-foreground/80">{step.rationale}</span>
+            </div>
+          )}
+          {step.input && Object.keys(step.input).length > 0 && (
+            <div>
+              <span className="text-muted-foreground">입력</span>
+              <pre className="mt-0.5 bg-background/60 rounded px-1.5 py-1 text-[10px] font-mono overflow-x-auto whitespace-pre-wrap break-words">
+                {JSON.stringify(step.input, null, 2)}
+              </pre>
+            </div>
+          )}
+          {step.output && Object.keys(step.output).length > 0 && (
+            <div>
+              <span className="text-muted-foreground">결과</span>
+              <TraceOutputBlock output={step.output} />
+            </div>
+          )}
+          {step.error && (
+            <div className="text-rose-600 dark:text-rose-400">
+              에러: <span className="font-mono">{step.error}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+/** Trace step의 output을 action별로 보기 좋게 표시 */
+function TraceOutputBlock({
+  output,
+}: {
+  output: NonNullable<TraceStep["output"]>;
+}) {
+  return (
+    <div className="mt-0.5 space-y-1 text-foreground/80">
+      {output.candidates_top3 && output.candidates_top3.length > 0 && (
+        <ul className="space-y-0.5 ml-1">
+          {output.candidates_top3.map((c, i) => (
+            <li key={i} className="font-mono text-[10px]">
+              · [{c.id}] {c.name}
+            </li>
+          ))}
+        </ul>
+      )}
+      {output.categories_top3 && output.categories_top3.length > 0 && (
+        <ul className="space-y-0.5 ml-1">
+          {output.categories_top3.map((c, i) => (
+            <li key={i} className="text-[10px]">
+              · {c.category_label}{" "}
+              <span className="text-muted-foreground">
+                ({c.table_count}개 표)
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {output.evidence && (
+        <div className="ml-1 text-[10px]">
+          <span className="font-mono">[{output.evidence.stat_table_id}]</span>{" "}
+          value={String(output.evidence.value)} {output.evidence.unit ?? ""}{" "}
+          (시점 {output.evidence.time_period ?? "—"})
+        </div>
+      )}
+      {output.result !== undefined && output.result !== null && (
+        <div className="ml-1 text-[10px]">
+          result = <span className="font-mono">{String(output.result)}</span>
+        </div>
+      )}
+      {output.verdict && (
+        <div className="ml-1 text-[10px]">
+          verdict = <span className="font-mono">{output.verdict}</span>
+          {typeof output.confidence === "number" && (
+            <span className="text-muted-foreground">
+              {" "}
+              (conf {output.confidence.toFixed(2)})
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
