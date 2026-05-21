@@ -115,6 +115,8 @@ export interface TraceStep {
 }
 
 export interface ClaimResult {
+  // 백엔드 식별자 — 실시간 partial 응답에서 들어옴, completed 결과에도 포함
+  claim_id?: string;
   sent_id: string;
   claim_text: string;
   verdict: Verdict;
