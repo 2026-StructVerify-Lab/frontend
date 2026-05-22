@@ -124,6 +124,9 @@ export interface ClaimResult {
   schema: ClaimSchema | null;
   graph_temporal: GraphTemporal | null;
   evidence: Evidence | null;
+  // derived claim(차이/증가율)이 함께 참조한 보조 데이터 — 예: prev 시점 KOSIS 값.
+  // base claim은 보통 빈 배열. 백엔드 VerificationResult.supporting_evidence와 1:1.
+  supporting_evidence?: Evidence[];
   computed_value?: number | null;
   formula?: string | null;
   explanation: string | null;

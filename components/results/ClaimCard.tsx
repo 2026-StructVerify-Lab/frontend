@@ -217,6 +217,31 @@ export function ClaimCard({ claim, focused, onHover, onClick }: ClaimCardProps) 
               </DetailSection>
             )}
 
+            {/* Supporting Evidence — derived claim의 prev 시점 등 함께 참조한 데이터 */}
+            {claim.supporting_evidence && claim.supporting_evidence.length > 0 && (
+              <DetailSection title="함께 참조한 데이터">
+                <p className="text-[11px] text-muted-foreground -mt-1 mb-1">
+                  차이·증가율 계산에 함께 쓰인 보조 시점 값
+                </p>
+                {claim.supporting_evidence.map((ev, idx) => (
+                  <div
+                    key={`${ev.stat_table_id ?? "—"}-${ev.time_period ?? idx}`}
+                    className="border-l-2 border-muted pl-2 py-1 space-y-0.5"
+                  >
+                    <DetailRow label="stat_id" value={ev.stat_table_id} mono />
+                    <DetailRow
+                      label="value"
+                      value={`${ev.official_value ?? "—"} ${ev.unit ?? ""}`}
+                    />
+                    <DetailRow
+                      label="time"
+                      value={ev.time_period ?? "—"}
+                    />
+                  </div>
+                ))}
+              </DetailSection>
+            )}
+
             {/* Evidence Plan */}
             {claim.schema?.evidence_plan && (
               <DetailSection title="검증 plan">

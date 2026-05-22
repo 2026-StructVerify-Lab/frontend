@@ -146,7 +146,7 @@ export function ClaimGroup({
       {expanded && (
         <CardContent className="p-3 space-y-2 bg-background animate-in fade-in-0 slide-in-from-top-1 duration-150">
           {claims.map((claim, idx) => (
-            <div key={claim.sent_id} className="relative">
+            <div key={claim.claim_id ?? claim.sent_id} className="relative">
               {isMulti && (
                 <span className="absolute -left-1 top-3 -translate-x-full text-[10.5px] text-muted-foreground tabular-nums pr-2 select-none hidden md:block">
                   {idx + 1}/{claims.length}
