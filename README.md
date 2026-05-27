@@ -3,7 +3,18 @@
 Next.js 14 (App Router) + TypeScript + Tailwind + shadcn/ui + react-pdf
 **Notion 톤 디자인 시스템** · 다크모드 · 글로벌 job watcher · 토스트 알림
 
-## 현재 상태 (Phase 5.2 — 디자인/UX 리뉴얼)
+상위 README — [../README.md](../README.md) (루트 — 전체 아키텍처).
+백엔드 API 계약 — [../backend/sv_platform/README.md](../backend/sv_platform/README.md).
+
+## 현재 상태 (Phase 5.3 — URL 입력 + 보조 evidence + 패치 P10~P18)
+
+### Phase 5.3 (이번 작업)
+- **URL 탭 입력** — 기사 URL 직접 제출 (백엔드가 trafilatura/LLM scraper로 추출)
+- **URL 추출본 자동 표시** — `Job.source_data`가 백엔드에서 추출본으로 채워지면 "원문" 패널이 자동 렌더 (P10/P13/P18)
+- **보조 evidence 렌더링** — derived claim(증가율/차이)의 prev 시점 KOSIS 값도 카드에 노출 (P7)
+- **types.ts 확장** — `supporting_evidence?: Evidence[]` 추가
+
+### Phase 5.2 (이전) — 디자인/UX 리뉴얼
 
 ### Phase 5.1 (기본 골격)
 - 페이지 — 랜딩 / 로그인 / 회원가입 / 대시보드 / 검증 입력 / **결과** / API 키 / 데이터 소스 / API 문서
@@ -244,11 +255,20 @@ if (hasActiveJob) { /* 비활성화 등 */ }
 ## 백엔드와의 계약 (`lib/types.ts`)
 
 ```ts
+Evidence {
+  stat_table_id, source_name,
+  official_value, unit, time_period,
+  pdf_bbox?  // PDF 좌표
+}
+
 ClaimResult {
   sent_id, claim_text, verdict, confidence,
-  schema, graph_temporal, evidence,
+  schema, graph_temporal,
+  evidence,                 // primary — claim 시점 매칭 KOSIS 값
+  supporting_evidence?,     // ★ derived 보조 데이터 (prev 시점 등). base는 빈 배열
   computed_value, formula, explanation,
-  pdf_locations?  // PDF 검증 시
+  plan?, trace?,            // workspace partial 노출 (진행 중)
+  pdf_locations?            // PDF 검증 시
 }
 
 VerificationReport {
@@ -257,12 +277,61 @@ VerificationReport {
 
 Job {
   id, status, source_type, source_uri?, source_data?,
+  // ★ source_type='url'일 때 source_data는 백엔드가 사전 추출한 markdown 본문
+  //   (P13/P18) — 프론트는 source_data 채워지면 자동 "원문" 패널 렌더
   progress, current_step, result, error,
   created_at, completed_at
 }
+
+VerifyRequest {
+  source_type: "text" | "url" | "pdf" | "docx",
+  source_data?,    // text 입력
+  url?,            // url 입력
+  file?,           // pdf/docx 입력 (multipart, Phase 3 미구현)
+  datasources?,
+  callback_url?
+}
 ```
 
-## 다음 작업 (Phase 5.3 후보)
+### URL 입력 흐름
+
+```
+1) 사용자가 verify/page.tsx의 URL 탭에서 입력 → submitVerify({source_type:"url", url})
+2) /v1/verify → Job(source_data=null, source_uri=URL) 생성, BackgroundTask 시작
+3) 폴링 /v1/jobs/{id} 시작 (jobWatcher가 자동 폴링)
+4) 백엔드:
+   - status=running, current_step="URL 본문 추출 중", progress=8 (P18 즉시 표시)
+   - extract_text(URL) — trafilatura + LLM scraper (30초 이내)
+   - Job.source_data = 추출된 markdown, current_step="본문 추출 완료", progress=12
+5) 프론트가 다음 poll에서 source_data를 받아 "원문" 패널 렌더
+6) 이후 백엔드가 SIR build → claim 탐지 → agent loop 진행
+7) workspace partial 매칭으로 claim 카드가 실시간 등장 (jobs.py가 agent_workspace 폴링)
+```
+
+## 컴포넌트: 보조 Evidence 렌더 (P7)
+
+ClaimCard는 derived claim(증가율/차이)에서 `supporting_evidence`가 있으면 "함께 참조한 데이터" 섹션을 자동 렌더링.
+
+```tsx
+{claim.supporting_evidence?.length > 0 && (
+  <DetailSection title="함께 참조한 데이터">
+    {claim.supporting_evidence.map((ev) => (
+      <div className="border-l-2 border-muted pl-2">
+        <DetailRow label="stat_id" value={ev.stat_table_id} mono />
+        <DetailRow label="value" value={`${ev.official_value} ${ev.unit}`} />
+        <DetailRow label="time" value={ev.time_period} />
+      </div>
+    ))}
+  </DetailSection>
+)}
+```
+
+예시:
+- 증가율 claim "8.7% 증가" → primary=2025-04 출생아 수, supporting=[2024-04 출생아 수]
+- 차이 claim "0.06명 증가" → primary=2025-04 합계출산율, supporting=[2024-04 합계출산율]
+- base claim "0.79명" → primary=2025-04 합계출산율, supporting=[] (섹션 안 뜸)
+
+## 다음 작업 (Phase 5.4 후보)
 
 - 결과 다운로드 (JSON / CSV)
 - 검증 결과 공유 링크 (read-only)

@@ -112,6 +112,26 @@ export interface TraceStep {
   success: boolean;
   error: string | null;
   output: TraceOutput | null;
+  // [2026-05-27] LLM이 이 action을 고른 이유 (자연어 사고)
+  thought?: string | null;
+  confidence_so_far?: number | null;
+  proposed_verdict?: string | null;
+}
+
+// [2026-05-27] AI 콘솔 탭용 — /v1/jobs/{id}/llm-trace 응답
+export interface LLMTraceEntry {
+  claim_id: string;
+  name: string;                 // "planner" / "reflect_call_03" 등
+  ts: string | null;
+  prompt: string | null;
+  response: string | null;
+  prompt_chars: number | null;
+  response_chars: number | null;
+}
+
+export interface LLMTraceResponse {
+  entries: LLMTraceEntry[];
+  count: number;
 }
 
 export interface ClaimResult {
@@ -124,6 +144,9 @@ export interface ClaimResult {
   schema: ClaimSchema | null;
   graph_temporal: GraphTemporal | null;
   evidence: Evidence | null;
+  // derived claim(차이/증가율)이 함께 참조한 보조 데이터 — 예: prev 시점 KOSIS 값.
+  // base claim은 보통 빈 배열. 백엔드 VerificationResult.supporting_evidence와 1:1.
+  supporting_evidence?: Evidence[];
   computed_value?: number | null;
   formula?: string | null;
   explanation: string | null;
