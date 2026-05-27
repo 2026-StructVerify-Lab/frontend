@@ -12,6 +12,7 @@ import type {
   DataSource,
   SourceType,
   VerificationReport,
+  LLMTraceResponse,
 } from "./types";
 import { mockJob, mockReport } from "./mocks/sample-result";
 
@@ -196,6 +197,41 @@ export async function getJob(jobId: string): Promise<Job> {
     return { ...mockJob, id: jobId, status: "completed", result: mockReport };
   }
   return apiFetch(`/v1/jobs/${jobId}`);
+}
+
+/**
+ * 잡의 LLM raw prompt/response trace (개발자 콘솔용).
+ * heavy — "AI 콘솔" 탭을 열 때만 호출.
+ */
+export async function getJobLLMTrace(jobId: string): Promise<LLMTraceResponse> {
+  if (USE_MOCK) {
+    await sleep(200);
+    return {
+      count: 2,
+      entries: [
+        {
+          claim_id: "mock-claim-1",
+          name: "planner",
+          ts: new Date(Date.now() - 5000).toISOString(),
+          prompt: "[mock] Planner prompt — 검증 계획 수립...",
+          response: '{\n  "claim_type": "absolute",\n  "...": "..."\n}',
+          prompt_chars: 2400,
+          response_chars: 380,
+        },
+        {
+          claim_id: "mock-claim-1",
+          name: "reflect_call_01",
+          ts: new Date(Date.now() - 3000).toISOString(),
+          prompt: "[mock] Reflect prompt iter 1 — 다음 action 결정...",
+          response:
+            '{\n  "thought": "catalog_search로 표를 먼저 찾아야 함",\n  "action": "catalog_search",\n  "input": {...}\n}',
+          prompt_chars: 1800,
+          response_chars: 220,
+        },
+      ],
+    };
+  }
+  return apiFetch(`/v1/jobs/${jobId}/llm-trace`);
 }
 
 export async function listJobs(limit = 20, offset = 0): Promise<Job[]> {

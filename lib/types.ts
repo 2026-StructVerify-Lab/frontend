@@ -112,6 +112,26 @@ export interface TraceStep {
   success: boolean;
   error: string | null;
   output: TraceOutput | null;
+  // [2026-05-27] LLM이 이 action을 고른 이유 (자연어 사고)
+  thought?: string | null;
+  confidence_so_far?: number | null;
+  proposed_verdict?: string | null;
+}
+
+// [2026-05-27] AI 콘솔 탭용 — /v1/jobs/{id}/llm-trace 응답
+export interface LLMTraceEntry {
+  claim_id: string;
+  name: string;                 // "planner" / "reflect_call_03" 등
+  ts: string | null;
+  prompt: string | null;
+  response: string | null;
+  prompt_chars: number | null;
+  response_chars: number | null;
+}
+
+export interface LLMTraceResponse {
+  entries: LLMTraceEntry[];
+  count: number;
 }
 
 export interface ClaimResult {
