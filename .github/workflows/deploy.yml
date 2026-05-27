@@ -16,7 +16,8 @@ jobs:
           key: ${{ secrets.EC2_KEY }}
           script: |
             cd ~/frontend
-            git pull origin main
+            git fetch origin
+            git reset --hard origin/main
             npm install
             npm run build
             pm2 restart frontend
